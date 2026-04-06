@@ -256,7 +256,7 @@ This ensures tools like `claude` CLI are discoverable by the server.
 
 ## Releases
 
-### How automated releases work
+### How releases currently work
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -268,20 +268,18 @@ This ensures tools like `claude` CLI are discoverable by the server.
 │       └→ skip          commit + tag v*    open issue    │
 └───────────────────────────────┼──────────────────────────┘
                                 │
-                       push tag v*
+                 version bump / tag created manually
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────┐
-│              release (triggered by v* tag)               │
+│      Release Desktop (manual workflow_dispatch only)     │
 │                                                         │
-│  ┌─────────┐  ┌─────────┐  ┌──────────────┐           │
-│  │  macOS   │  │ Windows │  │    Linux     │           │
-│  │ dmg+zip  │  │  nsis   │  │ AppImage+deb │           │
-│  └────┬─────┘  └────┬────┘  └──────┬───────┘           │
-│       └──────────────┼─────────────┘                    │
-│                      ▼                                  │
-│          GitHub Release + assets                        │
-│        (latest.yml / latest-mac.yml)                    │
+│  platforms=mac  → mac build only                        │
+│  platforms=all  → mac + Windows + Linux builds          │
+│                                                         │
+│  publish-release uploads all produced assets into the   │
+│  same GitHub release for the chosen tag                 │
+│  (dmg/zip/exe/AppImage/deb/latest*.yml)                 │
 └─────────────────────────────────────────────────────────┘
                        │
                        ▼
@@ -293,6 +291,15 @@ This ensures tools like `claude` CLI are discoverable by the server.
 └─────────────────────────────────────────────────────────┘
 ```
 
+The important current operational detail is that Windows and Linux are not independent release paths yet. In the current workflow:
+
+- `platforms` only supports `mac` or `all`
+- the mac build always runs
+- Windows and Linux only run when `platforms=all`
+- the publish job uploads all selected platform artifacts into one GitHub release
+
+That means the platform artifacts are bundled together operationally in the release workflow, even though the app binaries themselves are platform-specific.
+
 ### Creating a release manually
 
 1. Make sure all changes are committed
@@ -300,11 +307,14 @@ This ensures tools like `claude` CLI are discoverable by the server.
    ```bash
    pnpm version patch   # or minor/major
    ```
-3. Push the tag:
+3. Push the tag if you want the release to target that version:
    ```bash
    git push origin master --tags
    ```
 4. Run the manual `release.yml` workflow when you are ready to publish binaries to GitHub Releases
+5. Choose:
+   - `platforms=mac` for a mac-only release
+   - `platforms=all` for a combined mac + Windows + Linux release
 
 ### Checking for upstream updates manually
 
@@ -355,6 +365,13 @@ Local macOS release builds are now signed during packaging. The staged local flo
 
 The local flow intentionally does **not** notarize or staple. That remains a separate approval step after artifact testing.
 
+Windows is different:
+
+- standard desktop `.exe` releases do not use an Apple-style notarization flow
+- a proper Windows release should use Authenticode code signing plus timestamping
+- a signed Windows build can still show SmartScreen reputation warnings until publisher reputation is established
+- EV certificates generally provide a stronger starting trust position than standard OV certificates
+
 When enabling CI notarization later:
 
 1. Add these secrets to the GitHub repo (Settings → Secrets → Actions):
@@ -366,10 +383,11 @@ When enabling CI notarization later:
    | `APPLE_ID` | Apple ID email for notarization |
    | `APPLE_APP_PASSWORD` | App-specific password |
    | `APPLE_TEAM_ID` | Apple Developer Team ID |
-   | `WIN_CERTIFICATE` | Base64-encoded .pfx code signing cert |
-   | `WIN_CERTIFICATE_PASSWORD` | Password for the .pfx |
+   | `WIN_CERTIFICATE` | Base64-encoded `.pfx` Authenticode code signing cert |
+   | `WIN_CERTIFICATE_PASSWORD` | Password for the `.pfx` |
 
-2. Uncomment the corresponding env vars in `.github/workflows/release.yml`
+2. Add a Windows signing step to `.github/workflows/release.yml`
+3. Verify signed Windows artifacts in CI after packaging
 
 For the complete local signing and staged packaging workflow, see `docs/development/macos-staged-release.md`.
 For the release-automation split between build verification and approved notarization, see `docs/development/release-automation-log.md`.

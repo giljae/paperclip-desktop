@@ -78,8 +78,11 @@ The repository does not yet have:
 ### 4. Signing and Trust
 
 - Add Windows certificate handling to CI.
-- Sign the installer and any shipped executable artifacts that need signing.
+- Use Authenticode signing for the installer and any shipped executable artifacts that need signing.
+- Timestamp Windows signatures during signing.
 - Verify signatures in CI after packaging.
+- Document SmartScreen reputation behavior so signed builds are not mistaken for fully reputation-cleared builds on day one.
+- Decide whether the release should use OV or EV signing based on cost, operator complexity, and trust goals.
 - Document certificate setup and rotation requirements.
 
 ### 5. Updates
@@ -131,6 +134,8 @@ The Windows release is ready only when all of the following are true:
 
 - add Windows cert secrets and signing configuration
 - sign and verify Windows artifacts in CI
+- add timestamping as part of the signing flow
+- document SmartScreen expectations for maintainers and support
 - support Windows-only release execution when needed
 
 ### Workstream D: QA and docs
