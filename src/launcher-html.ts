@@ -860,6 +860,7 @@ function showView(name) {
 }
 
 function showChooser() {
+  selectCard("local");
   showView("chooser");
   launcher.showChooser();
 }
@@ -1472,7 +1473,6 @@ function relativeTime(timestamp) {
 
 function applySnapshot(nextSnapshot) {
   snapshot = nextSnapshot;
-  selectedCard = nextSnapshot.state.chooserMode === "remote_existing" ? "remote" : "local";
   selectCard(selectedCard);
   document.getElementById("rememberChoice").checked =
     !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile;
