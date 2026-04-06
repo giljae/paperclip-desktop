@@ -147,6 +147,7 @@ Validation:
 
 - Require `http://` or `https://`
 - Normalize trailing slashes
+- Reject URLs that embed `username:password@host` credentials
 - Warn for non-HTTPS unless hostname matches private or tailnet patterns
 - Block malformed URLs before any network call
 
@@ -422,11 +423,16 @@ Store only:
 - profile metadata
 - last known health metadata
 - local settings
+- per-profile or per-origin Electron browser session state needed to preserve upstream remote sign-in continuity
 
 Do not store:
 
 - remote passwords
 - raw auth tokens copied out of the browser context
+
+Implementation note:
+
+- if the user asks Desktop to remember an otherwise-unsaved remote choice, Desktop may first persist that verified remote as a normal saved profile so the reconnect target remains stable without storing credentials
 
 ---
 

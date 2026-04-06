@@ -1,12 +1,34 @@
-import { app, BrowserWindow, dialog, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  shell,
+  type MenuItemConstructorOptions,
+} from "electron";
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
 import treeKill from "tree-kill";
 import { initAutoUpdater } from "./updater";
-
-// __dirname is available natively in CommonJS
+import { getLauncherHtml } from "./launcher-html";
+import { preflightRemoteConnection } from "./connection/preflight";
+import { ConnectionStore, getConnectionsFilePath } from "./connection/profiles";
+import { normalizeRemoteUrl } from "./connection/validate";
+import {
+  isNavigationAllowed,
+  localPartition,
+  shouldOpenExternally,
+} from "./connection/window-policy";
+import { LOCAL_PROFILE_ID } from "./connection/types";
+import type {
+  ConnectionMode,
+  ConnectionProfile,
+  RemotePreflightResult,
+} from "./connection/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -18,26 +40,78 @@ const POLL_INTERVAL_MS = 400;
 const PID_FILE_NAME = "paperclip-electron.pid";
 
 // ---------------------------------------------------------------------------
-// Paths
+// Process-global state
 // ---------------------------------------------------------------------------
 
-/** Resolve the app server root directory. */
+let serverProcess: ChildProcess | null = null;
+let serverPort = PREFERRED_PORT;
+let mainWindow: BrowserWindow | null = null;
+let launcherWindow: BrowserWindow | null = null;
+let isQuitting = false;
+let bootSequence = 0;
+let launcherView: LauncherView = "chooser";
+let currentConnection: {
+  mode: ConnectionMode;
+  profileId: string | null;
+  startUrl: string;
+  allowedOrigin: string;
+  partition: string;
+} | null = null;
+
+let connectionStore: ConnectionStore;
+
+type LauncherView = "chooser" | "remote-form" | "saved" | "local-boot" | "connecting" | "error";
+type BootStep = "init" | "database" | "server" | "ready";
+
+app.setName("Paperclip");
+
+// ---------------------------------------------------------------------------
+// Paths and version helpers
+// ---------------------------------------------------------------------------
+
 function getAppRoot(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "app-server");
   }
-  // In dev mode, app.getAppPath() returns the project's dist/ directory.
-  // Go up one level to the project root.
+
   return path.resolve(app.getAppPath(), "..");
 }
 
+function resolveLocalServerVersion(): string | null {
+  const candidates = app.isPackaged
+    ? [path.join(getAppRoot(), "server", "package.json")]
+    : [path.join(getAppRoot(), "node_modules", "@paperclipai", "server", "package.json")];
+
+  for (const candidate of candidates) {
+    try {
+      const raw = fs.readFileSync(candidate, "utf8");
+      const parsed = JSON.parse(raw) as { version?: string };
+      if (typeof parsed.version === "string") {
+        return parsed.version;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+function getLauncherHtmlPath(): string {
+  return path.join(app.getPath("temp"), "paperclip-launcher", "launcher.html");
+}
+
+function ensureLauncherHtmlFile(): string {
+  const launcherPath = getLauncherHtmlPath();
+  fs.mkdirSync(path.dirname(launcherPath), { recursive: true });
+  fs.writeFileSync(launcherPath, getLauncherHtml(), "utf8");
+  return launcherPath;
+}
+
 // ---------------------------------------------------------------------------
-// Port detection
+// Port detection and server lifecycle
 // ---------------------------------------------------------------------------
 
-/**
- * Check if a TCP port is already in use.
- */
 function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const sock = net.createConnection({ port, host: "127.0.0.1" }, () => {
@@ -48,26 +122,16 @@ function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
-/**
- * Find a free port starting from the preferred port.
- */
 async function findFreePort(startPort: number): Promise<number> {
-  for (let port = startPort; port < startPort + 100; port++) {
-    if (!(await isPortInUse(port))) return port;
+  for (let port = startPort; port < startPort + 100; port += 1) {
+    if (!(await isPortInUse(port))) {
+      return port;
+    }
   }
+
   throw new Error(`No free port found in range ${startPort}-${startPort + 99}`);
 }
 
-// ---------------------------------------------------------------------------
-// Server lifecycle
-// ---------------------------------------------------------------------------
-
-let serverProcess: ChildProcess | null = null;
-let serverPort: number = PREFERRED_PORT;
-
-/**
- * Wait for a TCP port to accept connections.
- */
 function waitForPort(port: number, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
@@ -92,56 +156,51 @@ function waitForPort(port: number, timeoutMs: number): Promise<void> {
   });
 }
 
-/**
- * Find the Node.js binary.
- *
- * In packaged mode we ship a bundled Node binary inside the app resources.
- * Falls back to probing well-known install locations.
- */
 function findNodeBinary(): string {
-  if (!app.isPackaged) return "node";
+  if (!app.isPackaged) {
+    return "node";
+  }
 
-  const isWin = process.platform === "win32";
+  const isWindows = process.platform === "win32";
   const bundledNode = path.join(
     process.resourcesPath,
     "app-server",
     "node-bin",
-    isWin ? "node.exe" : "node",
+    isWindows ? "node.exe" : "node",
   );
+
   try {
     fs.accessSync(bundledNode, fs.constants.X_OK);
     return bundledNode;
-  } catch { /* bundled binary not found, fall back */ }
+  } catch {
+    // ignore
+  }
 
-  // Fallback: probe well-known install locations
   const candidates: string[] = [];
   const home = process.env.HOME ?? "";
   const nvmDir = process.env.NVM_DIR ?? path.join(home, ".nvm");
+
   try {
-    const ver = fs.readFileSync(path.join(nvmDir, "alias", "default"), "utf8").trim();
-    candidates.push(path.join(nvmDir, "versions", "node", ver, "bin", "node"));
-  } catch { /* nvm not present */ }
+    const version = fs.readFileSync(path.join(nvmDir, "alias", "default"), "utf8").trim();
+    candidates.push(path.join(nvmDir, "versions", "node", version, "bin", "node"));
+  } catch {
+    // ignore
+  }
 
-  candidates.push(
-    "/usr/local/bin/node",
-    "/opt/homebrew/bin/node",
-    "/usr/bin/node",
-  );
+  candidates.push("/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node");
 
-  for (const c of candidates) {
-    try { fs.accessSync(c, fs.constants.X_OK); return c; } catch { /* not here */ }
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // ignore
+    }
   }
 
   return "node";
 }
 
-/**
- * Resolve the user's full login-shell PATH.
- *
- * Electron apps launched from Finder / Dock inherit a minimal PATH that
- * excludes directories like ~/.nvm, /opt/homebrew/bin, and npm global bin.
- * Uses -lc (login, non-interactive) to avoid .bashrc/.zshrc side effects.
- */
 function resolveShellPath(): string {
   const fallbackDirs = [
     "/usr/local/bin",
@@ -155,41 +214,37 @@ function resolveShellPath(): string {
 
   const home = process.env.HOME ?? "";
   if (home) {
-    fallbackDirs.unshift(
-      path.join(home, ".local", "bin"),
-      path.join(home, ".npm-global", "bin"),
-    );
+    fallbackDirs.unshift(path.join(home, ".local", "bin"), path.join(home, ".npm-global", "bin"));
     const nvmDir = process.env.NVM_DIR ?? path.join(home, ".nvm");
     try {
-      const ver = fs.readFileSync(path.join(nvmDir, "alias", "default"), "utf8").trim();
-      fallbackDirs.unshift(path.join(nvmDir, "versions", "node", ver, "bin"));
-    } catch { /* nvm not present */ }
+      const version = fs.readFileSync(path.join(nvmDir, "alias", "default"), "utf8").trim();
+      fallbackDirs.unshift(path.join(nvmDir, "versions", "node", version, "bin"));
+    } catch {
+      // ignore
+    }
   }
 
   let basePath = process.env.PATH ?? "";
   try {
     const userShell = process.env.SHELL || "/bin/zsh";
-    // Use -lc (login, non-interactive) to avoid .bashrc/.zshrc side effects
     const shellPath = execSync(`${userShell} -lc 'echo $PATH'`, {
       encoding: "utf8",
-      timeout: 5000,
+      timeout: 5_000,
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    if (shellPath) basePath = shellPath;
-  } catch { /* shell probe failed */ }
+    if (shellPath) {
+      basePath = shellPath;
+    }
+  } catch {
+    // ignore
+  }
 
-  // Always merge well-known directories into the resolved PATH so that
-  // tools like `claude` installed in ~/.npm-global/bin are discoverable
-  // even if the user's shell profile doesn't export them.
-  const sep = path.delimiter;
-  const existing = new Set(basePath.split(sep));
-  const missing = fallbackDirs.filter((d) => !existing.has(d));
-  return missing.length > 0 ? basePath + sep + missing.join(sep) : basePath;
+  const existing = new Set(basePath.split(path.delimiter));
+  const missing = fallbackDirs.filter((dir) => !existing.has(dir));
+  return missing.length > 0
+    ? basePath + path.delimiter + missing.join(path.delimiter)
+    : basePath;
 }
-
-// ---------------------------------------------------------------------------
-// PID file for orphan protection
-// ---------------------------------------------------------------------------
 
 function getPidFilePath(): string {
   return path.join(app.getPath("userData"), PID_FILE_NAME);
@@ -198,33 +253,35 @@ function getPidFilePath(): string {
 function writePidFile(pid: number): void {
   try {
     fs.writeFileSync(getPidFilePath(), String(pid), "utf8");
-  } catch { /* best-effort */ }
+  } catch {
+    // ignore
+  }
 }
 
 function cleanupPidFile(): void {
   try {
     fs.unlinkSync(getPidFilePath());
-  } catch { /* best-effort */ }
+  } catch {
+    // ignore
+  }
 }
 
 function killOrphanedServer(): void {
   try {
     const pidStr = fs.readFileSync(getPidFilePath(), "utf8").trim();
-    const pid = parseInt(pidStr, 10);
-    if (!isNaN(pid) && pid > 0) {
-      process.kill(pid, 0); // test if alive
+    const pid = Number.parseInt(pidStr, 10);
+    if (!Number.isNaN(pid) && pid > 0) {
+      process.kill(pid, 0);
       treeKill(pid, "SIGTERM");
       console.log(`Killed orphaned server process (pid=${pid})`);
     }
-  } catch { /* no orphan or already dead */ }
+  } catch {
+    // ignore
+  }
+
   cleanupPidFile();
 }
 
-/**
- * Resolve PAPERCLIP_HOME: prefer an existing ~/.paperclip instance (the
- * default dev/CLI location) so the desktop app shares the same database.
- * Falls back to the Electron-standard userData directory for first-time users.
- */
 function resolvePaperclipHome(): string {
   const home = process.env.HOME ?? "";
   const defaultHome = path.join(home, ".paperclip");
@@ -235,79 +292,54 @@ function resolvePaperclipHome(): string {
   return app.getPath("userData");
 }
 
-/**
- * Spawn the Paperclip server as a child process.
- */
 function startServer(port: number): ChildProcess {
   const root = getAppRoot();
-  const isWin = process.platform === "win32";
+  const isWindows = process.platform === "win32";
   const enrichedPath = resolveShellPath();
   const paperclipHome = resolvePaperclipHome();
   console.log(`Using PAPERCLIP_HOME: ${paperclipHome}`);
 
-  let child: ChildProcess;
+  const child = app.isPackaged
+    ? spawn(findNodeBinary(), [path.join(root, "server", "dist", "index.js")], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: enrichedPath,
+          NODE_ENV: "production",
+          PORT: String(port),
+          PAPERCLIP_HOME: paperclipHome,
+          PAPERCLIP_MIGRATION_AUTO_APPLY: "true",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: !isWindows,
+      })
+    : spawn("node", [path.join(root, "node_modules", "@paperclipai", "server", "dist", "index.js")], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: enrichedPath,
+          NODE_ENV: "development",
+          PORT: String(port),
+          PAPERCLIP_HOME: paperclipHome,
+          PAPERCLIP_MIGRATION_AUTO_APPLY: "true",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: !isWindows,
+      });
 
-  if (app.isPackaged) {
-    const serverEntry = path.join(root, "server", "dist", "index.js");
-    child = spawn(findNodeBinary(), [serverEntry], {
-      cwd: root,
-      env: {
-        ...process.env,
-        PATH: enrichedPath,
-        NODE_ENV: "production",
-        PORT: String(port),
-        PAPERCLIP_HOME: paperclipHome,
-        // Always auto-apply pending migrations on startup — Electron spawns the
-        // server with stdin ignored (not a TTY) so the TTY heuristic in the
-        // server would auto-apply anyway, but this makes the intent explicit and
-        // ensures it works even if the heuristic changes.
-        PAPERCLIP_MIGRATION_AUTO_APPLY: "true",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: !isWin,
-    });
-  } else {
-    // Dev mode: run the npm-installed @paperclipai/server directly
-    const serverEntry = path.join(
-      root, "node_modules", "@paperclipai", "server", "dist", "index.js",
-    );
-    child = spawn("node", [serverEntry], {
-      cwd: root,
-      env: {
-        ...process.env,
-        PATH: enrichedPath,
-        NODE_ENV: "development",
-        PORT: String(port),
-        PAPERCLIP_HOME: paperclipHome,
-        PAPERCLIP_MIGRATION_AUTO_APPLY: "true",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: !isWin,
-    });
-  }
-
-  // Write PID file for orphan protection
   if (child.pid) {
     writePidFile(child.pid);
   }
 
-  child.stdout?.on("data", (chunk: Buffer) => {
-    process.stdout.write(chunk);
-  });
-
-  child.stderr?.on("data", (chunk: Buffer) => {
-    process.stderr.write(chunk);
-  });
-
+  child.stdout?.on("data", (chunk: Buffer) => process.stdout.write(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
   return child;
 }
 
-/**
- * Kill the server and all of its child processes using tree-kill.
- */
 function killServer(): Promise<void> {
   return new Promise((resolve) => {
     if (!serverProcess?.pid) {
+      cleanupPidFile();
       resolve();
       return;
     }
@@ -315,14 +347,7 @@ function killServer(): Promise<void> {
     const pid = serverProcess.pid;
     serverProcess = null;
 
-    treeKill(pid, "SIGTERM", (err) => {
-      if (err) {
-        try {
-          treeKill(pid, "SIGKILL");
-        } catch {
-          // ignore
-        }
-      }
+    treeKill(pid, "SIGTERM", () => {
       cleanupPidFile();
       resolve();
     });
@@ -330,265 +355,134 @@ function killServer(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Splash window with step-by-step status
+// Launcher and window policy
 // ---------------------------------------------------------------------------
 
-let splashWindow: BrowserWindow | null = null;
-
-function sendSplashStatus(step: string, detail: string, progress: number) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send("status-update", { step, detail, progress });
-  }
-}
-
-async function createSplashWindow(): Promise<BrowserWindow> {
-  const splash = new BrowserWindow({
-    width: 480,
-    height: 380,
-    frame: false,
+async function createLauncherWindow(): Promise<BrowserWindow> {
+  const launcher = new BrowserWindow({
+    width: 520,
+    height: 520,
+    minWidth: 520,
+    minHeight: 520,
     resizable: false,
-    transparent: false,
     maximizable: false,
     fullscreenable: false,
+    title: "Paperclip",
+    show: false,
+    backgroundColor: "#0a0a0a",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "splash-preload.js"),
+      preload: path.join(__dirname, "launcher-preload.js"),
     },
   });
 
-  splash.center();
+  launcher.on("closed", () => {
+    launcherWindow = null;
+  });
 
-  const paperclipSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg>`;
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    height: 100vh;
-    background: #0a0a0a;
-    color: #e4e4e7;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-    -webkit-app-region: drag;
-    overflow: hidden;
-  }
-
-  .logo {
-    width: 56px;
-    height: 56px;
-    margin-bottom: 20px;
-    opacity: 0;
-    animation: fadeIn 0.5s ease-out forwards;
-  }
-
-  .title {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    margin-bottom: 32px;
-    opacity: 0;
-    animation: fadeIn 0.5s ease-out 0.15s forwards;
-  }
-
-  .progress-track {
-    width: 240px;
-    height: 3px;
-    background: #27272a;
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 24px;
-    opacity: 0;
-    animation: fadeIn 0.5s ease-out 0.3s forwards;
-  }
-  .progress-bar {
-    height: 100%;
-    width: 0%;
-    background: #a1a1aa;
-    border-radius: 2px;
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .steps {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 280px;
-    opacity: 0;
-    animation: fadeIn 0.5s ease-out 0.4s forwards;
-  }
-
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-    color: #52525b;
-    transition: color 0.3s ease;
-  }
-  .step.active { color: #e4e4e7; }
-  .step.done { color: #71717a; }
-
-  .step-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .step-icon .pending {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #3f3f46;
-  }
-
-  .step-icon .spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid #3f3f46;
-    border-top-color: #a1a1aa;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  .step-icon .check {
-    color: #71717a;
-    font-size: 14px;
-    line-height: 1;
-  }
-
-  .step-label { flex: 1; }
-
-  .step-detail {
-    font-size: 11px;
-    color: #52525b;
-    margin-top: 2px;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-</style>
-</head>
-<body>
-
-  <div class="logo">${paperclipSvg}</div>
-  <div class="title">Paperclip</div>
-
-  <div class="progress-track">
-    <div class="progress-bar" id="progressBar"></div>
-  </div>
-
-  <div class="steps" id="steps">
-    <div class="step" id="step-init" data-key="init">
-      <div class="step-icon"><div class="pending"></div></div>
-      <div><div class="step-label">Initializing</div></div>
-    </div>
-    <div class="step" id="step-database" data-key="database">
-      <div class="step-icon"><div class="pending"></div></div>
-      <div><div class="step-label">Starting database</div></div>
-    </div>
-    <div class="step" id="step-server" data-key="server">
-      <div class="step-icon"><div class="pending"></div></div>
-      <div><div class="step-label">Starting server</div></div>
-    </div>
-    <div class="step" id="step-ready" data-key="ready">
-      <div class="step-icon"><div class="pending"></div></div>
-      <div><div class="step-label">Loading interface</div></div>
-    </div>
-  </div>
-
-  <script>
-    const progressBar = document.getElementById('progressBar');
-    const stepElements = {
-      init: document.getElementById('step-init'),
-      database: document.getElementById('step-database'),
-      server: document.getElementById('step-server'),
-      ready: document.getElementById('step-ready'),
-    };
-
-    const stepOrder = ['init', 'database', 'server', 'ready'];
-
-    function setStepState(key, state, detail) {
-      const el = stepElements[key];
-      if (!el) return;
-
-      const iconContainer = el.querySelector('.step-icon');
-      el.classList.remove('active', 'done');
-
-      if (state === 'active') {
-        el.classList.add('active');
-        iconContainer.innerHTML = '<div class="spinner"></div>';
-      } else if (state === 'done') {
-        el.classList.add('done');
-        iconContainer.innerHTML = '<span class="check">&#10003;</span>';
-      } else {
-        iconContainer.innerHTML = '<div class="pending"></div>';
-      }
-
-      let detailEl = el.querySelector('.step-detail');
-      if (detail) {
-        if (!detailEl) {
-          detailEl = document.createElement('div');
-          detailEl.className = 'step-detail';
-          el.querySelector('.step-label').parentElement.appendChild(detailEl);
-        }
-        detailEl.textContent = detail;
-      } else if (detailEl) {
-        detailEl.remove();
-      }
-    }
-
-    window.electronSplash.onStatusUpdate(({ step, detail, progress }) => {
-      progressBar.style.width = Math.min(100, Math.max(0, progress)) + '%';
-
-      const currentIdx = stepOrder.indexOf(step);
-      stepOrder.forEach((key, idx) => {
-        if (idx < currentIdx) {
-          setStepState(key, 'done');
-        } else if (idx === currentIdx) {
-          setStepState(key, 'active', detail);
-        } else {
-          setStepState(key, 'pending');
-        }
-      });
-    });
-  </script>
-
-</body>
-</html>`;
-
-  // Write HTML to a temp file — data: URLs block preload scripts in Electron 35+
-  const splashDir = path.join(app.getPath("temp"), "paperclip-splash");
-  fs.mkdirSync(splashDir, { recursive: true });
-  const splashPath = path.join(splashDir, "splash.html");
-  fs.writeFileSync(splashPath, html, "utf8");
-  await splash.loadFile(splashPath);
-
-  splashWindow = splash;
-  return splash;
+  await launcher.loadFile(ensureLauncherHtmlFile());
+  launcherWindow = launcher;
+  return launcher;
 }
 
-// ---------------------------------------------------------------------------
-// Main window
-// ---------------------------------------------------------------------------
+async function ensureLauncherWindow(view: LauncherView, payload?: Record<string, unknown>): Promise<BrowserWindow> {
+  launcherView = view;
+  const launcher = launcherWindow && !launcherWindow.isDestroyed()
+    ? launcherWindow
+    : await createLauncherWindow();
 
-let mainWindow: BrowserWindow | null = null;
+  if (!launcher.isVisible()) {
+    launcher.show();
+  }
+  launcher.focus();
+  sendLauncherState();
+  sendLauncherNavigation(view, payload);
+  return launcher;
+}
 
-function createWindow(port: number): BrowserWindow {
+function sendLauncherNavigation(view: LauncherView, payload: Record<string, unknown> = {}): void {
+  launcherView = view;
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.webContents.send("launcher:navigate", { view, ...payload });
+  }
+}
+
+function sendLauncherState(): void {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.webContents.send("launcher:state-changed", buildLauncherSnapshot());
+  }
+  rebuildAppMenu();
+}
+
+function sendBootStatus(step: BootStep, detail: string, progress: number): void {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.webContents.send("launcher:boot-status", { step, detail, progress });
+  }
+}
+
+function sendConnectionError(title: string, detail: string): void {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.webContents.send("launcher:connection-error", { title, detail });
+  }
+}
+
+function buildLauncherSnapshot() {
+  const snapshot = connectionStore.getSnapshot();
+  return {
+    initialView: launcherView,
+    activeProfileId: snapshot.state.activeProfileId,
+    state: snapshot.state,
+    profiles: connectionStore.listProfiles(),
+  };
+}
+
+function applyWindowPolicy(win: BrowserWindow, allowedOrigin: string): void {
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    if (isNavigationAllowed(targetUrl, allowedOrigin)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (shouldOpenExternally(targetUrl, allowedOrigin)) {
+      void shell.openExternal(targetUrl);
+    }
+  });
+
+  win.webContents.on("will-redirect", (event, targetUrl) => {
+    if (isNavigationAllowed(targetUrl, allowedOrigin)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (shouldOpenExternally(targetUrl, allowedOrigin)) {
+      void shell.openExternal(targetUrl);
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (shouldOpenExternally(url, allowedOrigin)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
+
+  win.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+}
+
+function createMainWindow(input: {
+  mode: ConnectionMode;
+  startUrl: string;
+  allowedOrigin: string;
+  partition: string;
+  preloadPath?: string;
+}): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -596,111 +490,117 @@ function createWindow(port: number): BrowserWindow {
     minHeight: 600,
     title: "Paperclip",
     show: false,
+    backgroundColor: "#0a0a0a",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
+      sandbox: input.mode === "remote_existing",
+      partition: input.partition,
+      preload: input.preloadPath,
     },
   });
+
+  applyWindowPolicy(win, input.allowedOrigin);
 
   win.once("ready-to-show", () => {
     win.show();
   });
 
-  // Block navigation to non-localhost URLs to prevent preload script exposure
-  win.webContents.on("will-navigate", (e, url) => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
-        e.preventDefault();
-        shell.openExternal(url);
-      }
-    } catch {
-      e.preventDefault();
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
     }
-  });
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    // Only allow opening external http/https links in the system browser
-    try {
-      const parsed = new URL(url);
-      if (
-        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-        parsed.hostname !== "localhost" &&
-        parsed.hostname !== "127.0.0.1"
-      ) {
-        shell.openExternal(url);
-      }
-    } catch { /* malformed URL, ignore */ }
-    return { action: "deny" };
   });
 
   return win;
 }
 
+async function replaceMainWindow(nextWindow: BrowserWindow): Promise<void> {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+
+  mainWindow = nextWindow;
+}
+
+async function teardownForModeSwitch(nextMode: ConnectionMode): Promise<void> {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+
+  if (
+    currentConnection?.mode === "local_embedded" ||
+    (nextMode === "local_embedded" && serverProcess)
+  ) {
+    await killServer();
+  }
+
+  currentConnection = null;
+}
+
+function remotePartitionKey(profileId: string | null, origin: string): string {
+  if (profileId) {
+    return `persist:paperclip-remote-${profileId}`;
+  }
+
+  const hash = createHash("sha256").update(origin).digest("hex").slice(0, 12);
+  return `persist:paperclip-remote-${hash}`;
+}
+
 // ---------------------------------------------------------------------------
-// App lifecycle
+// Connection boot flows
 // ---------------------------------------------------------------------------
 
-let isQuitting = false;
-
-app.setName("Paperclip");
-
-app.whenReady().then(async () => {
-  // Clean up any orphaned server from a previous crash
-  killOrphanedServer();
-
-  const splash = await createSplashWindow();
+async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberChoice?: boolean } = {}): Promise<void> {
+  const bootId = ++bootSequence;
+  await teardownForModeSwitch("local_embedded");
+  await ensureLauncherWindow("local-boot");
 
   try {
-    // Step 1: Initializing
-    sendSplashStatus("init", "Preparing environment\u2026", 5);
+    sendBootStatus("init", "Preparing environment...", 5);
 
-    // Step 1b: Find a free port before spawning the server
     serverPort = await findFreePort(PREFERRED_PORT);
-    if (serverPort !== PREFERRED_PORT) {
-      console.log(`Port ${PREFERRED_PORT} in use, using ${serverPort} instead`);
+    if (bootId !== bootSequence) {
+      return;
     }
-    sendSplashStatus("init", "Preparing environment\u2026", 10);
 
-    // Step 2: Starting database
-    sendSplashStatus("database", "Launching embedded PostgreSQL\u2026", 15);
-
+    sendBootStatus("database", "Launching embedded PostgreSQL...", 15);
     serverProcess = startServer(serverPort);
 
-    // Track progress — only allow forward movement to prevent visual regression
-    let dbReady = false;
-    let serverListening = false;
-    let lastProgress = 15;
-
-    const updateProgress = (step: string, detail: string, progress: number) => {
-      if (progress > lastProgress) {
-        lastProgress = progress;
-        sendSplashStatus(step, detail, progress);
-      }
-    };
-
-    // Accumulate output for error reporting; also write to a log file
-    const serverOutputLines: string[] = [];
     const logFile = path.join(app.getPath("userData"), "server.log");
     const logStream = fs.createWriteStream(logFile, { flags: "a" });
     logStream.write(`\n--- Server start ${new Date().toISOString()} (port=${serverPort}) ---\n`);
 
+    let dbReady = false;
+    let serverListening = false;
+    let lastProgress = 15;
+    const serverOutputLines: string[] = [];
+
+    const updateProgress = (step: BootStep, detail: string, progress: number) => {
+      if (progress <= lastProgress || bootId !== bootSequence) {
+        return;
+      }
+      lastProgress = progress;
+      sendBootStatus(step, detail, progress);
+    };
+
     const onServerData = (chunk: Buffer) => {
       const text = chunk.toString();
       serverOutputLines.push(...text.split("\n").filter(Boolean));
-      if (serverOutputLines.length > 200) serverOutputLines.splice(0, serverOutputLines.length - 200);
+      if (serverOutputLines.length > 200) {
+        serverOutputLines.splice(0, serverOutputLines.length - 200);
+      }
       logStream.write(text);
 
-      // Match specific Paperclip server log markers
       if (!dbReady && (text.includes("PostgreSQL ready") || text.includes("migration"))) {
         dbReady = true;
-        updateProgress("database", "Running migrations\u2026", 35);
+        updateProgress("database", "Running migrations...", 35);
       }
 
       if (!serverListening && text.includes("Server listening on")) {
         serverListening = true;
-        updateProgress("server", "Server is starting\u2026", 55);
+        updateProgress("server", "Server is starting...", 55);
       }
     };
 
@@ -709,87 +609,505 @@ app.whenReady().then(async () => {
 
     serverProcess.on("exit", (code, signal) => {
       logStream.end();
-      if (serverProcess) {
-        const tail = serverOutputLines.slice(-30).join("\n");
-        console.error(`Server exited unexpectedly (code=${code}, signal=${signal})\n${tail}`);
-        dialog
-          .showMessageBox({
-            type: "error",
-            title: "Server Error",
-            message: "The Paperclip server stopped unexpectedly.",
-            detail: `Exit code: ${code}, signal: ${signal}\n\nLog: ${logFile}\n\n${tail}`,
-            buttons: ["Quit"],
-          })
-          .then(() => app.quit());
+      if (!serverProcess) {
+        return;
       }
+
+      const tail = serverOutputLines.slice(-30).join("\n");
+      console.error(`Server exited unexpectedly (code=${code}, signal=${signal})\n${tail}`);
+      void dialog
+        .showMessageBox({
+          type: "error",
+          title: "Server Error",
+          message: "The Paperclip server stopped unexpectedly.",
+          detail: `Exit code: ${code}, signal: ${signal}\n\nLog: ${logFile}\n\n${tail}`,
+          buttons: ["Quit"],
+        })
+        .then(() => app.quit());
     });
 
-    // Animate progress while waiting for the port
     const progressInterval = setInterval(() => {
-      if (!dbReady) {
-        updateProgress("database", "Launching embedded PostgreSQL\u2026", 20);
-      } else if (!serverListening) {
-        updateProgress("server", "Waiting for server\u2026", 50);
+      if (bootId !== bootSequence) {
+        clearInterval(progressInterval);
+        return;
       }
-    }, 2000);
 
-    updateProgress("server", "Waiting for server\u2026", 45);
+      if (!dbReady) {
+        updateProgress("database", "Launching embedded PostgreSQL...", 20);
+      } else if (!serverListening) {
+        updateProgress("server", "Waiting for server...", 50);
+      }
+    }, 2_000);
 
-    // Step 3: Wait for server
+    updateProgress("server", "Waiting for server...", 45);
     await waitForPort(serverPort, SERVER_STARTUP_TIMEOUT_MS);
-
     clearInterval(progressInterval);
-    sendSplashStatus("server", "Server is ready", 70);
 
-    // Step 4: Loading interface
-    sendSplashStatus("ready", "Loading the UI\u2026", 80);
-
-    mainWindow = createWindow(serverPort);
-    mainWindow.loadURL(`http://localhost:${serverPort}`);
-
-    mainWindow.webContents.once("did-finish-load", () => {
-      sendSplashStatus("ready", "Almost there\u2026", 95);
-    });
-
-    mainWindow.once("ready-to-show", () => {
-      sendSplashStatus("ready", "Ready!", 100);
-      setTimeout(() => {
-        if (splash && !splash.isDestroyed()) {
-          splash.destroy();
-        }
-        splashWindow = null;
-      }, 400);
-
-      // Initialize auto-updater after window is visible
-      initAutoUpdater(mainWindow!);
-    });
-
-    mainWindow.on("closed", () => {
-      mainWindow = null;
-    });
-  } catch (err) {
-    if (splash && !splash.isDestroyed()) {
-      splash.destroy();
+    if (bootId !== bootSequence) {
+      return;
     }
-    splashWindow = null;
-    await dialog.showMessageBox({
-      type: "error",
-      title: "Startup Error",
-      message: "Failed to start the Paperclip server.",
-      detail: String(err),
-      buttons: ["Quit"],
+
+    sendBootStatus("server", "Server is ready", 70);
+    sendBootStatus("ready", "Loading the UI...", 80);
+
+    const startUrl = `http://localhost:${serverPort}`;
+    const window = createMainWindow({
+      mode: "local_embedded",
+      startUrl,
+      allowedOrigin: new URL(startUrl).origin,
+      partition: localPartition(),
+      preloadPath: path.join(__dirname, "preload.js"),
     });
+
+    await window.loadURL(startUrl);
+    if (bootId !== bootSequence) {
+      window.destroy();
+      return;
+    }
+
+    await replaceMainWindow(window);
+    currentConnection = {
+      mode: "local_embedded",
+      profileId: LOCAL_PROFILE_ID,
+      startUrl,
+      allowedOrigin: new URL(startUrl).origin,
+      partition: localPartition(),
+    };
+    connectionStore.recordConnectionResult(LOCAL_PROFILE_ID);
+    if (options.rememberChoiceExplicit) {
+      connectionStore.setRememberedProfile(
+        LOCAL_PROFILE_ID,
+        options.rememberChoice === true,
+      );
+    }
+    sendLauncherState();
+
+    sendBootStatus("ready", "Ready!", 100);
+    if (launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.close();
+    }
+    launcherWindow = null;
+    initAutoUpdater(window);
+  } catch (error) {
     await killServer();
-    app.quit();
+    sendConnectionError(
+      "Failed to start local Paperclip",
+      error instanceof Error ? error.message : String(error),
+    );
+    sendLauncherNavigation("error");
   }
+}
+
+async function bootRemote(options: {
+  profileId?: string;
+  remoteUrl: string;
+  displayName?: string;
+  saveProfile: boolean;
+  rememberChoiceExplicit?: boolean;
+  rememberChoice?: boolean;
+}): Promise<void> {
+  const bootId = ++bootSequence;
+  await teardownForModeSwitch("remote_existing");
+
+  let normalized;
+  try {
+    normalized = normalizeRemoteUrl(options.remoteUrl);
+  } catch (error) {
+    await ensureLauncherWindow("remote-form");
+    sendConnectionError(
+      "Invalid remote URL",
+      error instanceof Error ? error.message : "Enter a valid http(s) URL.",
+    );
+    sendLauncherNavigation("error");
+    return;
+  }
+
+  await ensureLauncherWindow("connecting", {
+    label: "Opening verified remote...",
+    url: normalized.normalizedUrl,
+  });
+
+  const result = await preflightRemoteConnection({
+    remoteUrl: normalized.normalizedUrl,
+    localServerVersion: resolveLocalServerVersion(),
+  });
+
+  if (bootId !== bootSequence) {
+    return;
+  }
+
+  if (!result.ok) {
+    if (options.profileId) {
+      connectionStore.recordRemoteHealth(options.profileId, result);
+      sendLauncherState();
+    }
+
+    sendConnectionError(
+      remoteErrorTitle(result),
+      result.detail ?? "Could not verify the selected remote.",
+    );
+    sendLauncherNavigation("error");
+    return;
+  }
+
+  let savedProfile: ConnectionProfile | null = null;
+  if (options.profileId) {
+    connectionStore.syncRemoteProfileUrl(options.profileId, result.normalizedUrl);
+    savedProfile = connectionStore.getProfile(options.profileId);
+  } else if (options.saveProfile || options.rememberChoice) {
+    savedProfile = connectionStore.saveRemoteProfile({
+      name: options.displayName,
+      remoteUrl: result.normalizedUrl,
+    });
+  }
+
+  const partition = remotePartitionKey(savedProfile?.id ?? null, result.origin);
+  const window = createMainWindow({
+    mode: "remote_existing",
+    startUrl: result.normalizedUrl,
+    allowedOrigin: result.origin,
+    partition,
+  });
+
+  const label = result.sessionState === "signed_out"
+    ? "Opening remote sign-in..."
+    : "Opening verified remote...";
+  sendLauncherNavigation("connecting", {
+    label,
+    url: result.normalizedUrl,
+  });
+
+  try {
+    await window.loadURL(result.normalizedUrl);
+    if (bootId !== bootSequence) {
+      window.destroy();
+      return;
+    }
+
+    await replaceMainWindow(window);
+    currentConnection = {
+      mode: "remote_existing",
+      profileId: savedProfile?.id ?? null,
+      startUrl: result.normalizedUrl,
+      allowedOrigin: result.origin,
+      partition,
+    };
+    if (savedProfile) {
+      connectionStore.recordConnectionResult(savedProfile.id, result);
+    }
+    if (options.rememberChoiceExplicit) {
+      connectionStore.setRememberedProfile(savedProfile?.id ?? null, options.rememberChoice === true);
+    }
+    sendLauncherState();
+
+    if (launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.close();
+    }
+    launcherWindow = null;
+  } catch (error) {
+    sendConnectionError(
+      "Failed to open remote Paperclip",
+      error instanceof Error ? error.message : String(error),
+    );
+    sendLauncherNavigation("error");
+  }
+}
+
+async function bootSavedProfile(profileId: string): Promise<void> {
+  if (profileId === LOCAL_PROFILE_ID) {
+    await bootLocal();
+    return;
+  }
+
+  const profile = connectionStore.getProfile(profileId);
+  if (!profile || profile.mode !== "remote_existing" || !profile.remoteUrl) {
+    throw new Error(`Unknown saved profile: ${profileId}`);
+  }
+
+  await bootRemote({
+    profileId,
+    remoteUrl: profile.remoteUrl,
+    displayName: profile.name,
+    saveProfile: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Launcher IPC
+// ---------------------------------------------------------------------------
+
+function registerLauncherIpc(): void {
+  ipcMain.handle("launcher:bootstrap", () => buildLauncherSnapshot());
+
+  ipcMain.handle("launcher:set-chooser-mode", (_event, mode: ConnectionMode) => {
+    connectionStore.setChooserMode(mode);
+    sendLauncherState();
+    return buildLauncherSnapshot();
+  });
+
+  ipcMain.handle(
+    "launcher:save-remote-profile",
+    (_event, payload: { profileId?: string; name?: string; remoteUrl: string }) => {
+      connectionStore.saveRemoteProfile(payload);
+      sendLauncherState();
+      return buildLauncherSnapshot();
+    },
+  );
+
+  ipcMain.handle("launcher:duplicate-profile", (_event, profileId: string) => {
+    connectionStore.duplicateRemoteProfile(profileId);
+    sendLauncherState();
+    return buildLauncherSnapshot();
+  });
+
+  ipcMain.handle("launcher:delete-profile", (_event, profileId: string) => {
+    connectionStore.deleteRemoteProfile(profileId);
+    sendLauncherState();
+    return buildLauncherSnapshot();
+  });
+
+  ipcMain.handle("launcher:verify-remote", (_event, payload: { remoteUrl: string }) =>
+    preflightRemoteConnection({
+      remoteUrl: payload.remoteUrl,
+      localServerVersion: resolveLocalServerVersion(),
+    }));
+
+  ipcMain.handle("launcher:connect-local", async (_event, payload: { rememberChoice: boolean }) => {
+    void bootLocal({
+      rememberChoiceExplicit: true,
+      rememberChoice: payload.rememberChoice,
+    });
+    return { started: true };
+  });
+
+  ipcMain.handle(
+    "launcher:connect-remote",
+    async (
+      _event,
+      payload: {
+        profileId?: string;
+        remoteUrl: string;
+        displayName?: string;
+        saveProfile: boolean;
+        rememberChoice: boolean;
+      },
+    ) => {
+      void bootRemote({
+        ...payload,
+        rememberChoiceExplicit: true,
+        rememberChoice: payload.rememberChoice,
+      });
+      return { started: true };
+    },
+  );
+
+  ipcMain.handle("launcher:connect-saved-profile", async (_event, profileId: string) => {
+    void bootSavedProfile(profileId);
+    return { started: true };
+  });
+
+  ipcMain.handle("launcher:open-saved-connections", async () => {
+    await ensureLauncherWindow("saved");
+    return buildLauncherSnapshot();
+  });
+
+  ipcMain.handle("launcher:show-chooser", async () => {
+    await ensureLauncherWindow("chooser");
+    return buildLauncherSnapshot();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Menu
+// ---------------------------------------------------------------------------
+
+function rebuildAppMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: "Paperclip",
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "Connection",
+      submenu: buildConnectionMenuItems(),
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [{ role: "minimize" }, { role: "close" }],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function buildConnectionMenuItems(): MenuItemConstructorOptions[] {
+  const snapshot = connectionStore.getSnapshot();
+  const recentProfiles = connectionStore.getRecentRemoteProfiles(5);
+
+  const items: MenuItemConstructorOptions[] = [
+    {
+      label: "Launch Chooser",
+      click: () => {
+        void ensureLauncherWindow("chooser");
+      },
+    },
+    {
+      label: "Connect Local",
+      click: () => {
+        void ensureLauncherWindow("local-boot").then(() => bootLocal());
+      },
+    },
+    {
+      label: "Manage Connections",
+      click: () => {
+        void ensureLauncherWindow("saved");
+      },
+    },
+    {
+      label: "Always Show Chooser On Launch",
+      type: "checkbox",
+      checked: snapshot.state.alwaysShowChooser,
+      click: (menuItem) => {
+        connectionStore.setAlwaysShowChooser(menuItem.checked);
+        sendLauncherState();
+      },
+    },
+  ];
+
+  if (recentProfiles.length > 0) {
+    items.push({ type: "separator" });
+    items.push(
+      ...recentProfiles.map((profile) => ({
+        label: `${profile.name} (${new URL(profile.remoteUrl ?? "https://example.com").host})`,
+        click: () => {
+          void ensureLauncherWindow("connecting", {
+            label: "Opening verified remote...",
+            url: profile.remoteUrl,
+          }).then(() => bootSavedProfile(profile.id));
+        },
+      })),
+    );
+  }
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Error helpers
+// ---------------------------------------------------------------------------
+
+function remoteErrorTitle(result: RemotePreflightResult): string {
+  switch (result.reason) {
+    case "unsupported_local_trusted":
+      return "Remote not eligible";
+    case "not_paperclip":
+      return "Non-Paperclip endpoint";
+    case "tls_error":
+      return "TLS validation failed";
+    case "auth_not_ready":
+      return "Remote auth is not ready";
+    default:
+      return "Could not verify remote";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// App lifecycle
+// ---------------------------------------------------------------------------
+
+app.whenReady().then(async () => {
+  killOrphanedServer();
+  connectionStore = new ConnectionStore(getConnectionsFilePath(app.getPath("userData")));
+  registerLauncherIpc();
+  rebuildAppMenu();
+
+  const startupProfileId = connectionStore.getStartupProfileId();
+  if (startupProfileId) {
+    if (startupProfileId === LOCAL_PROFILE_ID) {
+      await ensureLauncherWindow("local-boot");
+      void bootLocal();
+      return;
+    }
+
+    const profile = connectionStore.getProfile(startupProfileId);
+    if (profile?.mode === "remote_existing" && profile.remoteUrl) {
+      await ensureLauncherWindow("connecting", {
+        label: "Opening verified remote...",
+        url: profile.remoteUrl,
+      });
+      void bootSavedProfile(startupProfileId);
+      return;
+    }
+  }
+
+  const chooserMode = connectionStore.getSnapshot().state.chooserMode;
+  await ensureLauncherWindow(chooserMode === "remote_existing" ? "remote-form" : "chooser");
 });
 
-// macOS: re-create window when dock icon clicked
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0 && serverProcess) {
-    mainWindow = createWindow(serverPort);
-    mainWindow.loadURL(`http://localhost:${serverPort}`);
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.show();
+    launcherWindow.focus();
+    return;
   }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
+  if (currentConnection) {
+    const window = createMainWindow({
+      mode: currentConnection.mode,
+      startUrl: currentConnection.startUrl,
+      allowedOrigin: currentConnection.allowedOrigin,
+      partition: currentConnection.partition,
+      preloadPath:
+        currentConnection.mode === "local_embedded"
+          ? path.join(__dirname, "preload.js")
+          : undefined,
+    });
+    void window.loadURL(currentConnection.startUrl).then(() => {
+      mainWindow = window;
+      if (currentConnection?.mode === "local_embedded") {
+        initAutoUpdater(window);
+      }
+    });
+    return;
+  }
+
+  void ensureLauncherWindow("chooser");
 });
 
 app.on("window-all-closed", () => {
@@ -798,29 +1116,24 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", async (e) => {
-  if (isQuitting) return;
-  if (serverProcess) {
-    isQuitting = true;
-    e.preventDefault();
-    await killServer();
-    app.quit();
+app.on("before-quit", async (event) => {
+  if (isQuitting) {
+    return;
   }
+
+  if (!serverProcess) {
+    return;
+  }
+
+  isQuitting = true;
+  event.preventDefault();
+  await killServer();
+  app.quit();
 });
 
-for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
-  process.on(sig, () => {
-    // Use app.quit() for graceful Electron shutdown instead of process.exit()
-    // which can leave GPU/helper processes alive.
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+  process.on(signal, () => {
     isQuitting = true;
     void killServer().then(() => app.quit());
   });
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

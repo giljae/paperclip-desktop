@@ -23,18 +23,17 @@
 The goal is simple: **make running Paperclip as easy as opening an app.**
 
 - 🖱 **One click to launch** — double-click the app and Paperclip starts automatically. No terminal, no `pnpm install`, no Node.js setup.
+- 🌐 **Remote connection mode** — connect the desktop shell to verified upstream Paperclip remotes in authenticated mode, with saved connections and quick reconnects.
 - 📦 **Paperclip inside** — ships an unmodified build of the upstream Paperclip server and UI. What you get in the app is exactly what you'd get by cloning and running the main repo.
 - 🔄 **Auto-updates** — pulls new desktop releases automatically via GitHub Releases.
 - 🖥 **Native menus, windowing, and system tray** — the Paperclip UI, but as a real desktop app.
 
-Under the hood, on launch the app:
+Under the hood, the app can either:
 
-1. Picks a free local port (starting at `3100`)
-2. Spawns the bundled Paperclip Node.js server
-3. Waits for it to become healthy
-4. Loads the Paperclip UI in a native Electron window
+1. Run the embedded local server flow
+2. Or verify a remote Paperclip origin via `/api/health` and `/api/auth/get-session` before loading it in a restricted remote-safe Electron window
 
-When you quit the app, the server is cleanly shut down.
+When local mode is active, the server is cleanly shut down when you quit the app.
 
 > For everything Paperclip itself can do — orchestrating AI agents, running autonomous companies, governance, budgets, org charts, etc. — see the **[upstream Paperclip repo](https://github.com/paperclipai/paperclip)**. This project does not modify or extend Paperclip's functionality; it only packages it.
 
@@ -94,6 +93,7 @@ Requirements: Node.js 20+, pnpm 9.15+.
 pnpm install           # Install deps
 pnpm dev               # Run Electron in dev mode against the bundled server
 pnpm build             # Compile the Electron main/preload TypeScript
+pnpm test:connections  # Run connection persistence, preflight, and origin-policy tests
 pnpm prepare-server    # Stage the Paperclip server bundle into build/
 pnpm build-ui          # Stage the Paperclip UI
 pnpm pack              # Build an unpacked app directory (no installer)
@@ -103,7 +103,9 @@ pnpm dist:mac          # macOS (.dmg + .zip, signed/notarized via local script)
 
 Key files:
 
-- `src/main.ts` — Electron main process: spawns the Paperclip server, manages its lifecycle, and opens the window
+- `src/main.ts` — Electron main process: launcher IPC, local/remote boot orchestration, menu actions, and server lifecycle
+- `src/connection/` — Connection persistence, remote validation/preflight, and exact-origin window policy helpers
+- `src/launcher-html.ts` — Internal launcher UI for the chooser, remote connect flow, saved connections, and local boot states
 - `src/preload.ts` — Preload script for the renderer
 - `src/updater.ts` — Auto-update wiring (`electron-updater` against GitHub Releases)
 - `electron-builder.yml` — Packaging config; bundles the `@paperclipai/server` npm package plus a platform-specific Node.js binary into `Resources/app-server/`

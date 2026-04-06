@@ -21,6 +21,9 @@ autoUpdater.logger = updaterLogger as typeof log;
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
+let activeWindow: BrowserWindow | null = null;
+let updaterInitialized = false;
+
 /**
  * Call this once from the main process after the window is ready.
  *
@@ -29,38 +32,46 @@ autoUpdater.autoInstallOnAppQuit = true;
  *   mainWindow.once("ready-to-show", () => initAutoUpdater(mainWindow));
  */
 export function initAutoUpdater(mainWindow: BrowserWindow): void {
+  activeWindow = mainWindow;
+
   // Don't check for updates in dev
   if (!app.isPackaged) {
     log.info("[updater] Skipping update check in dev mode");
     return;
   }
 
+  if (updaterInitialized) {
+    return;
+  }
+
+  updaterInitialized = true;
+
   autoUpdater.on("checking-for-update", () => {
     log.info("[updater] Checking for updates...");
-    sendStatus(mainWindow, "checking");
+    sendStatus("checking");
   });
 
   autoUpdater.on("update-available", (info) => {
     log.info(`[updater] Update available: v${info.version}`);
-    sendStatus(mainWindow, "available", info.version);
+    sendStatus("available", info.version);
   });
 
   autoUpdater.on("update-not-available", () => {
     log.info("[updater] App is up to date");
-    sendStatus(mainWindow, "up-to-date");
+    sendStatus("up-to-date");
   });
 
   autoUpdater.on("download-progress", (progress) => {
-    sendStatus(mainWindow, "downloading", undefined, Math.round(progress.percent));
+    sendStatus("downloading", undefined, Math.round(progress.percent));
   });
 
   autoUpdater.on("update-downloaded", (info) => {
     log.info(`[updater] Update downloaded: v${info.version}`);
-    sendStatus(mainWindow, "downloaded", info.version);
+    sendStatus("downloaded", info.version);
 
     // Prompt user to restart
     dialog
-      .showMessageBox(mainWindow, {
+      .showMessageBox(activeWindow ?? mainWindow, {
         type: "info",
         title: "Update Ready",
         message: `Paperclip v${info.version} has been downloaded.`,
@@ -77,19 +88,19 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
   autoUpdater.on("error", (err) => {
     if (isMissingReleaseFeedError(err)) {
-      sendStatus(mainWindow, "up-to-date");
+      sendStatus("up-to-date");
       return;
     }
 
     log.error("[updater] Error:", err);
-    sendStatus(mainWindow, "error");
+    sendStatus("error");
   });
 
   // Initial check, then every 4 hours
-  void checkForUpdatesSafely(mainWindow);
+  void checkForUpdatesSafely();
   setInterval(
     () => {
-      void checkForUpdatesSafely(mainWindow);
+      void checkForUpdatesSafely();
     },
     4 * 60 * 60 * 1000,
   );
@@ -97,21 +108,25 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
 type UpdateStatus = "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error";
 
-function sendStatus(win: BrowserWindow, status: UpdateStatus, version?: string, percent?: number): void {
-  win.webContents.send("update-status", { status, version, percent });
+function sendStatus(status: UpdateStatus, version?: string, percent?: number): void {
+  if (!activeWindow || activeWindow.isDestroyed()) {
+    return;
+  }
+
+  activeWindow.webContents.send("update-status", { status, version, percent });
 }
 
-async function checkForUpdatesSafely(mainWindow: BrowserWindow): Promise<void> {
+async function checkForUpdatesSafely(): Promise<void> {
   try {
     await autoUpdater.checkForUpdates();
   } catch (err) {
     if (isMissingReleaseFeedError(err)) {
-      sendStatus(mainWindow, "up-to-date");
+      sendStatus("up-to-date");
       return;
     }
 
     log.error("[updater] Update check failed:", err);
-    sendStatus(mainWindow, "error");
+    sendStatus("error");
   }
 }
 
