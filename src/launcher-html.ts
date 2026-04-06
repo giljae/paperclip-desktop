@@ -15,12 +15,13 @@ export function getLauncherHtml(): string {
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 28px 24px;
     user-select: none;
-    overflow: hidden;
+    overflow: auto;
   }
 
   .window {
-    width: 480px;
+    width: min(100%, 480px);
     min-height: 380px;
     display: flex;
     flex-direction: column;
@@ -144,6 +145,18 @@ export function getLauncherHtml(): string {
     display: flex;
     gap: 10px;
     justify-content: center;
+  }
+
+  .session-return {
+    width: 340px;
+    margin-top: 20px;
+    display: none;
+  }
+  .session-return.visible {
+    display: block;
+  }
+  .session-return .btn {
+    width: 100%;
   }
 
   .form-group {
@@ -732,6 +745,10 @@ export function getLauncherHtml(): string {
       </div>
     </div>
   </div>
+
+  <div class="session-return" id="sessionReturn">
+    <button class="btn" id="sessionReturnBtn" onclick="returnToCurrentSession()">Return to Current Session</button>
+  </div>
 </div>
 
 <div class="modal-overlay" id="editModal">
@@ -794,6 +811,7 @@ function showView(name) {
   if (name === "local-boot") {
     resetLocalBoot();
   }
+  updateSessionReturn(name);
 }
 
 function showChooser() {
@@ -981,6 +999,10 @@ async function switchToLocal() {
   await launcher.connectLocal({ rememberChoice });
 }
 
+async function returnToCurrentSession() {
+  await launcher.returnToCurrentSession();
+}
+
 async function openCurrentRemoteInBrowser() {
   const remoteUrl = lastRemoteLoop && lastRemoteLoop.url
     ? lastRemoteLoop.url
@@ -1026,6 +1048,18 @@ function showRemoteConnectingState(result) {
 
 function needsBrowserStep(result) {
   return result && (result.bootstrapStatus === "bootstrap_pending" || result.sessionState === "signed_out");
+}
+
+function updateSessionReturn(viewName) {
+  const container = document.getElementById("sessionReturn");
+  const button = document.getElementById("sessionReturnBtn");
+  const hiddenViews = new Set(["local-boot", "connecting"]);
+  const visible = !!(snapshot && snapshot.hasCurrentConnection && !hiddenViews.has(viewName));
+
+  container.classList.toggle("visible", visible);
+  button.textContent = snapshot && snapshot.currentConnectionLabel
+    ? snapshot.currentConnectionLabel
+    : "Return to Current Session";
 }
 
 function renderConnections() {
@@ -1382,6 +1416,7 @@ function applySnapshot(nextSnapshot) {
   document.getElementById("rememberChoice").checked =
     !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile;
   renderConnections();
+  updateSessionReturn((document.querySelector(".view.active") || {}).id?.replace("view-", "") || nextSnapshot.initialView || "chooser");
 }
 
 function escapeHtml(value) {

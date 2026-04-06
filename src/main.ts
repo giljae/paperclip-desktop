@@ -48,6 +48,7 @@ let serverProcess: ChildProcess | null = null;
 let serverPort = PREFERRED_PORT;
 let mainWindow: BrowserWindow | null = null;
 let launcherWindow: BrowserWindow | null = null;
+let launcherPresentation: LauncherPresentation = "standalone";
 let isQuitting = false;
 let bootSequence = 0;
 let launcherView: LauncherView = "chooser";
@@ -69,6 +70,7 @@ type LauncherView =
   | "connecting"
   | "remote-loop"
   | "error";
+type LauncherPresentation = "standalone" | "attached";
 type BootStep = "init" | "database" | "server" | "ready";
 
 app.setName("Paperclip");
@@ -366,18 +368,34 @@ function killServer(): Promise<void> {
 // Launcher and window policy
 // ---------------------------------------------------------------------------
 
-async function createLauncherWindow(): Promise<BrowserWindow> {
+function desiredLauncherPresentation(): LauncherPresentation {
+  return mainWindow && !mainWindow.isDestroyed() ? "attached" : "standalone";
+}
+
+function closeLauncherWindow(): void {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.close();
+  }
+  launcherWindow = null;
+}
+
+async function createLauncherWindow(presentation: LauncherPresentation): Promise<BrowserWindow> {
+  const attached = presentation === "attached";
   const launcher = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    resizable: true,
-    maximizable: true,
+    width: attached ? 720 : 1440,
+    height: attached ? 880 : 900,
+    minWidth: attached ? 720 : 900,
+    minHeight: attached ? 860 : 600,
+    resizable: !attached,
+    maximizable: !attached,
     fullscreenable: false,
+    minimizable: !attached,
+    parent: attached ? mainWindow ?? undefined : undefined,
+    modal: attached,
     title: "Paperclip",
     show: false,
     backgroundColor: "#0a0a0a",
+    titleBarStyle: process.platform === "darwin" && attached ? "hiddenInset" : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -387,18 +405,30 @@ async function createLauncherWindow(): Promise<BrowserWindow> {
 
   launcher.on("closed", () => {
     launcherWindow = null;
+    launcherPresentation = "standalone";
   });
 
   await launcher.loadFile(ensureLauncherHtmlFile());
   launcherWindow = launcher;
+  launcherPresentation = presentation;
   return launcher;
 }
 
 async function ensureLauncherWindow(view: LauncherView, payload?: object): Promise<BrowserWindow> {
   launcherView = view;
-  const launcher = launcherWindow && !launcherWindow.isDestroyed()
-    ? launcherWindow
-    : await createLauncherWindow();
+  const presentation = desiredLauncherPresentation();
+  const mustRecreate =
+    !launcherWindow ||
+    launcherWindow.isDestroyed() ||
+    launcherPresentation !== presentation;
+
+  let launcher: BrowserWindow;
+  if (mustRecreate) {
+    closeLauncherWindow();
+    launcher = await createLauncherWindow(presentation);
+  } else {
+    launcher = launcherWindow!;
+  }
 
   if (!launcher.isVisible()) {
     launcher.show();
@@ -440,9 +470,34 @@ function buildLauncherSnapshot() {
   return {
     initialView: launcherView,
     activeProfileId: snapshot.state.activeProfileId,
+    hasCurrentConnection: currentConnection !== null,
+    currentConnectionLabel: describeCurrentConnection(),
     state: snapshot.state,
     profiles: connectionStore.listProfiles(),
   };
+}
+
+function describeCurrentConnection(): string | null {
+  if (!currentConnection) {
+    return null;
+  }
+
+  if (currentConnection.mode === "local_embedded") {
+    return "Return to Local";
+  }
+
+  const profile = currentConnection.profileId
+    ? connectionStore.getProfile(currentConnection.profileId)
+    : null;
+  if (profile?.mode === "remote_existing") {
+    return `Return to ${profile.name}`;
+  }
+
+  try {
+    return `Return to ${new URL(currentConnection.startUrl).host}`;
+  } catch {
+    return "Return to Current Session";
+  }
 }
 
 function applyWindowPolicy(win: BrowserWindow, allowedOrigin: string): void {
@@ -563,22 +618,6 @@ async function reopenCurrentConnectionWindow(): Promise<boolean> {
   return true;
 }
 
-async function teardownForModeSwitch(nextMode: ConnectionMode): Promise<void> {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy();
-    mainWindow = null;
-  }
-
-  if (
-    currentConnection?.mode === "local_embedded" ||
-    (nextMode === "local_embedded" && serverProcess)
-  ) {
-    await killServer();
-  }
-
-  currentConnection = null;
-}
-
 function remotePartitionKey(profileId: string | null, origin: string): string {
   if (profileId) {
     return `persist:paperclip-remote-${profileId}`;
@@ -594,7 +633,22 @@ function remotePartitionKey(profileId: string | null, origin: string): string {
 
 async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberChoice?: boolean } = {}): Promise<void> {
   const bootId = ++bootSequence;
-  await teardownForModeSwitch("local_embedded");
+
+  if (currentConnection?.mode === "local_embedded" && mainWindow && !mainWindow.isDestroyed()) {
+    connectionStore.recordConnectionResult(LOCAL_PROFILE_ID);
+    if (options.rememberChoiceExplicit) {
+      connectionStore.setRememberedProfile(
+        LOCAL_PROFILE_ID,
+        options.rememberChoice === true,
+      );
+    }
+    sendLauncherState();
+    closeLauncherWindow();
+    mainWindow.focus();
+    return;
+  }
+
+  const previousConnectionMode = currentConnection?.mode ?? null;
   await ensureLauncherWindow("local-boot");
 
   try {
@@ -706,6 +760,9 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     }
 
     await replaceMainWindow(window);
+    if (previousConnectionMode === "local_embedded") {
+      await killServer();
+    }
     currentConnection = {
       mode: "local_embedded",
       profileId: LOCAL_PROFILE_ID,
@@ -723,13 +780,12 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     sendLauncherState();
 
     sendBootStatus("ready", "Ready!", 100);
-    if (launcherWindow && !launcherWindow.isDestroyed()) {
-      launcherWindow.close();
-    }
-    launcherWindow = null;
+    closeLauncherWindow();
     initAutoUpdater(window);
   } catch (error) {
-    await killServer();
+    if (!previousConnectionMode) {
+      await killServer();
+    }
     sendConnectionError(
       "Failed to start local Paperclip",
       error instanceof Error ? error.message : String(error),
@@ -747,7 +803,7 @@ async function bootRemote(options: {
   rememberChoice?: boolean;
 }): Promise<void> {
   const bootId = ++bootSequence;
-  await teardownForModeSwitch("remote_existing");
+  const previousConnectionMode = currentConnection?.mode ?? null;
 
   let normalized;
   try {
@@ -842,7 +898,11 @@ async function bootRemote(options: {
       return;
     }
 
+    closeLauncherWindow();
     await replaceMainWindow(window);
+    if (previousConnectionMode === "local_embedded") {
+      await killServer();
+    }
     currentConnection = {
       mode: "remote_existing",
       profileId: savedProfile?.id ?? null,
@@ -854,11 +914,6 @@ async function bootRemote(options: {
       connectionStore.recordConnectionResult(savedProfile.id, result);
     }
     sendLauncherState();
-
-    if (launcherWindow && !launcherWindow.isDestroyed()) {
-      launcherWindow.close();
-    }
-    launcherWindow = null;
   } catch (error) {
     sendConnectionError(
       "Failed to open remote Paperclip",
@@ -975,6 +1030,12 @@ function registerLauncherIpc(): void {
     const normalized = normalizeRemoteUrl(remoteUrl);
     await shell.openExternal(normalized.normalizedUrl);
     return { opened: true, url: normalized.normalizedUrl };
+  });
+
+  ipcMain.handle("launcher:return-to-current-session", async () => {
+    closeLauncherWindow();
+    const opened = await reopenCurrentConnectionWindow();
+    return { opened };
   });
 
   ipcMain.handle("launcher:show-chooser", async () => {

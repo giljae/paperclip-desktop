@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
   openSavedConnections: () => ipcRenderer.invoke("launcher:open-saved-connections"),
   openCurrentRemote: () => ipcRenderer.invoke("launcher:open-current-remote"),
   openRemoteInBrowser: (remoteUrl: string) => ipcRenderer.invoke("launcher:open-remote-in-browser", remoteUrl),
+  returnToCurrentSession: () => ipcRenderer.invoke("launcher:return-to-current-session"),
   showChooser: () => ipcRenderer.invoke("launcher:show-chooser"),
   onStateChanged: (callback: (snapshot: unknown) => void) => {
     ipcRenderer.on("launcher:state-changed", (_event, snapshot) => callback(snapshot));
