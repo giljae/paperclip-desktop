@@ -14,6 +14,8 @@ test("preflight accepts authenticated Paperclip with active session", async () =
         deploymentMode: "authenticated",
         deploymentExposure: "private",
         authReady: true,
+        bootstrapStatus: "ready",
+        bootstrapInviteActive: false,
       },
       200,
     ),
@@ -35,6 +37,7 @@ test("preflight accepts authenticated Paperclip with active session", async () =
   assert.equal(result.ok, true);
   assert.equal(result.sessionState, "signed_in");
   assert.equal(result.deploymentMode, "authenticated");
+  assert.equal(result.bootstrapStatus, "ready");
 });
 
 test("preflight treats 401 session probe as sign-in required", async () => {
@@ -46,6 +49,8 @@ test("preflight treats 401 session probe as sign-in required", async () => {
         deploymentMode: "authenticated",
         deploymentExposure: "private",
         authReady: true,
+        bootstrapStatus: "bootstrap_pending",
+        bootstrapInviteActive: false,
       },
       200,
     ),
@@ -62,6 +67,7 @@ test("preflight treats 401 session probe as sign-in required", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.sessionState, "signed_out");
+  assert.equal(result.bootstrapStatus, "bootstrap_pending");
 });
 
 test("preflight blocks local_trusted remotes", async () => {
@@ -75,6 +81,8 @@ test("preflight blocks local_trusted remotes", async () => {
           deploymentMode: "local_trusted",
           deploymentExposure: "private",
           authReady: true,
+          bootstrapStatus: "ready",
+          bootstrapInviteActive: false,
         },
         200,
       ),

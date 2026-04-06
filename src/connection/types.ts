@@ -12,6 +12,7 @@ export type ConnectionHealth =
 export type DeploymentMode = "local_trusted" | "authenticated";
 export type DeploymentExposure = "private" | "public";
 export type SessionState = "signed_in" | "signed_out" | "unknown";
+export type BootstrapStatus = "ready" | "bootstrap_pending";
 export type RemotePreflightFailureReason =
   | "invalid_url"
   | "unreachable"
@@ -58,6 +59,8 @@ export interface RemotePreflightResult {
   deploymentMode: DeploymentMode | null;
   deploymentExposure: DeploymentExposure | null;
   authReady: boolean | null;
+  bootstrapStatus: BootstrapStatus | null;
+  bootstrapInviteActive: boolean | null;
   sessionState: SessionState;
   version: string | null;
   reason?: RemotePreflightFailureReason;

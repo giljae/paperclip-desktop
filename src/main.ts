@@ -16,6 +16,7 @@ import treeKill from "tree-kill";
 import { initAutoUpdater } from "./updater";
 import { getLauncherHtml } from "./launcher-html";
 import { preflightRemoteConnection } from "./connection/preflight";
+import { buildRemoteLoopPayload, getRemoteLoopState } from "./connection/remote-loop";
 import { ConnectionStore, getConnectionsFilePath } from "./connection/profiles";
 import { normalizeRemoteUrl } from "./connection/validate";
 import {
@@ -60,7 +61,14 @@ let currentConnection: {
 
 let connectionStore: ConnectionStore;
 
-type LauncherView = "chooser" | "remote-form" | "saved" | "local-boot" | "connecting" | "error";
+type LauncherView =
+  | "chooser"
+  | "remote-form"
+  | "saved"
+  | "local-boot"
+  | "connecting"
+  | "remote-loop"
+  | "error";
 type BootStep = "init" | "database" | "server" | "ready";
 
 app.setName("Paperclip");
@@ -386,7 +394,7 @@ async function createLauncherWindow(): Promise<BrowserWindow> {
   return launcher;
 }
 
-async function ensureLauncherWindow(view: LauncherView, payload?: Record<string, unknown>): Promise<BrowserWindow> {
+async function ensureLauncherWindow(view: LauncherView, payload?: object): Promise<BrowserWindow> {
   launcherView = view;
   const launcher = launcherWindow && !launcherWindow.isDestroyed()
     ? launcherWindow
@@ -401,7 +409,7 @@ async function ensureLauncherWindow(view: LauncherView, payload?: Record<string,
   return launcher;
 }
 
-function sendLauncherNavigation(view: LauncherView, payload: Record<string, unknown> = {}): void {
+function sendLauncherNavigation(view: LauncherView, payload: object = {}): void {
   launcherView = view;
   if (launcherWindow && !launcherWindow.isDestroyed()) {
     launcherWindow.webContents.send("launcher:navigate", { view, ...payload });
@@ -521,6 +529,38 @@ async function replaceMainWindow(nextWindow: BrowserWindow): Promise<void> {
   }
 
   mainWindow = nextWindow;
+}
+
+async function reopenCurrentConnectionWindow(): Promise<boolean> {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+    return true;
+  }
+
+  if (!currentConnection) {
+    return false;
+  }
+
+  const window = createMainWindow({
+    mode: currentConnection.mode,
+    startUrl: currentConnection.startUrl,
+    allowedOrigin: currentConnection.allowedOrigin,
+    partition: currentConnection.partition,
+    preloadPath:
+      currentConnection.mode === "local_embedded"
+        ? path.join(__dirname, "preload.js")
+        : undefined,
+  });
+
+  await window.loadURL(currentConnection.startUrl);
+  await replaceMainWindow(window);
+  if (currentConnection.mode === "local_embedded") {
+    initAutoUpdater(window);
+  }
+  return true;
 }
 
 async function teardownForModeSwitch(nextMode: ConnectionMode): Promise<void> {
@@ -769,9 +809,12 @@ async function bootRemote(options: {
     partition,
   });
 
-  const label = result.sessionState === "signed_out"
-    ? "Opening remote sign-in..."
-    : "Opening verified remote...";
+  const remoteLoopState = getRemoteLoopState(result);
+  const label = remoteLoopState === "bootstrap_pending"
+    ? "Opening remote setup..."
+    : remoteLoopState === "signin_required"
+      ? "Opening remote sign-in..."
+      : "Opening verified remote...";
   sendLauncherNavigation("connecting", {
     label,
     url: result.normalizedUrl,
@@ -799,6 +842,12 @@ async function bootRemote(options: {
       connectionStore.setRememberedProfile(savedProfile?.id ?? null, options.rememberChoice === true);
     }
     sendLauncherState();
+
+    const remoteLoopPayload = buildRemoteLoopPayload(result);
+    if (remoteLoopPayload) {
+      await ensureLauncherWindow("remote-loop", remoteLoopPayload);
+      return;
+    }
 
     if (launcherWindow && !launcherWindow.isDestroyed()) {
       launcherWindow.close();
@@ -909,6 +958,11 @@ function registerLauncherIpc(): void {
   ipcMain.handle("launcher:open-saved-connections", async () => {
     await ensureLauncherWindow("saved");
     return buildLauncherSnapshot();
+  });
+
+  ipcMain.handle("launcher:open-current-remote", async () => {
+    const opened = await reopenCurrentConnectionWindow();
+    return { opened };
   });
 
   ipcMain.handle("launcher:show-chooser", async () => {
@@ -1088,22 +1142,7 @@ app.on("activate", () => {
   }
 
   if (currentConnection) {
-    const window = createMainWindow({
-      mode: currentConnection.mode,
-      startUrl: currentConnection.startUrl,
-      allowedOrigin: currentConnection.allowedOrigin,
-      partition: currentConnection.partition,
-      preloadPath:
-        currentConnection.mode === "local_embedded"
-          ? path.join(__dirname, "preload.js")
-          : undefined,
-    });
-    void window.loadURL(currentConnection.startUrl).then(() => {
-      mainWindow = window;
-      if (currentConnection?.mode === "local_embedded") {
-        initAutoUpdater(window);
-      }
-    });
+    void reopenCurrentConnectionWindow();
     return;
   }
 

@@ -425,6 +425,43 @@ export function getLauncherHtml(): string {
     color: #52525b;
   }
 
+  .loop-card {
+    width: 360px;
+    padding: 18px;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    background: #141417;
+    margin-bottom: 18px;
+    text-align: left;
+  }
+  .loop-eyebrow {
+    font-size: 11px;
+    color: #fbbf24;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .loop-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .loop-detail {
+    font-size: 12px;
+    color: #a1a1aa;
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+  .loop-url {
+    font-size: 11px;
+    color: #71717a;
+    word-break: break-word;
+    padding: 10px 12px;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    background: #0f0f12;
+  }
+
   .error-box {
     width: 340px;
     padding: 16px;
@@ -616,6 +653,21 @@ export function getLauncherHtml(): string {
     </div>
   </div>
 
+  <div class="view" id="view-remote-loop">
+    <div class="loop-card">
+      <div class="loop-eyebrow" id="remoteLoopEyebrow">Verified Remote</div>
+      <div class="loop-title" id="remoteLoopTitle">Remote sign-in required</div>
+      <div class="loop-detail" id="remoteLoopDetail">Desktop verified the remote, but it still needs work in the remote window before you can continue here.</div>
+      <div class="loop-url" id="remoteLoopUrl"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn primary" id="remoteLoopPrimaryBtn" onclick="openCurrentRemoteWindow()">Open Remote</button>
+      <button class="btn" onclick="showChooser()">Back to Connections</button>
+      <button class="btn" onclick="switchToLocal()">Switch to Local</button>
+    </div>
+  </div>
+
   <div class="view" id="view-error">
     <div class="error-box">
       <div class="error-title" id="errorTitle">Remote not eligible</div>
@@ -695,6 +747,7 @@ let selectedCard = "local";
 let editingId = null;
 let lastVerification = null;
 let lastErrorAction = null;
+let lastRemoteLoop = null;
 let snapshot = null;
 
 const stepElements = {
@@ -787,8 +840,20 @@ function renderStatus(result) {
   meta.innerHTML = mapped.meta.map((item) => '<span class="pill">' + escapeHtml(item) + "</span>").join("");
 
   success.style.display = mapped.success ? "block" : "none";
+  signinBtn.textContent = mapped.actionLabel;
   signinBtn.disabled = !mapped.success;
   saveBtn.disabled = !mapped.success;
+}
+
+function renderRemoteLoop(payload) {
+  lastRemoteLoop = payload;
+  document.getElementById("remoteLoopEyebrow").textContent =
+    payload.state === "bootstrap_pending" ? "Remote Setup Required" : "Verified Remote";
+  document.getElementById("remoteLoopTitle").textContent = payload.title || "Remote sign-in required";
+  document.getElementById("remoteLoopDetail").textContent = payload.detail || "";
+  document.getElementById("remoteLoopUrl").textContent = payload.url || "";
+  document.getElementById("remoteLoopPrimaryBtn").textContent = payload.primaryActionLabel || "Open Remote";
+  showView("remote-loop");
 }
 
 async function verifyRemote() {
@@ -874,9 +939,10 @@ async function retryLastAction() {
 
   document.getElementById("remoteUrl").value = lastErrorAction.remoteUrl || "";
   document.getElementById("displayName").value = lastErrorAction.displayName || "";
-  showRemoteConnectingState({
+  showRemoteConnectingState(lastVerification || {
     ok: true,
     sessionState: "signed_out",
+    bootstrapStatus: null,
     normalizedUrl: lastErrorAction.remoteUrl,
   });
   await launcher.connectRemote({
@@ -895,9 +961,23 @@ async function switchToLocal() {
   await launcher.connectLocal({ rememberChoice });
 }
 
+async function openCurrentRemoteWindow() {
+  await launcher.openCurrentRemote();
+}
+
 function showRemoteConnectingState(result) {
+  const loopState = result.bootstrapStatus === "bootstrap_pending"
+    ? "bootstrap_pending"
+    : result.sessionState === "signed_out"
+      ? "signin_required"
+      : null;
+
   document.getElementById("connectingLabel").textContent =
-    result.sessionState === "signed_out" ? "Opening remote sign-in..." : "Opening verified remote...";
+    loopState === "bootstrap_pending"
+      ? "Opening remote setup..."
+      : loopState === "signin_required"
+        ? "Opening remote sign-in..."
+        : "Opening verified remote...";
   document.getElementById("connectingUrl").textContent = result.normalizedUrl || document.getElementById("remoteUrl").value.trim();
   showView("connecting");
 }
@@ -1120,6 +1200,21 @@ function statusClass(profile) {
 }
 
 function mapVerificationResult(result) {
+  if (result.ok && result.bootstrapStatus === "bootstrap_pending") {
+    return {
+      success: true,
+      badgeClass: "warning",
+      badge: "Verified remote - setup required",
+      title: "Instance setup required",
+      detail: mergeDetail(
+        "The host is a verified authenticated Paperclip remote, but no instance admin exists yet. Open the remote setup flow instead of entering credentials in Desktop.",
+        result.warning,
+      ),
+      meta: buildResultMeta(result),
+      actionLabel: "Open Remote Setup",
+    };
+  }
+
   if (result.ok && result.sessionState === "signed_in") {
     return {
       success: true,
@@ -1131,6 +1226,7 @@ function mapVerificationResult(result) {
         result.warning,
       ),
       meta: buildResultMeta(result),
+      actionLabel: "Open Remote",
     };
   }
 
@@ -1145,6 +1241,7 @@ function mapVerificationResult(result) {
         result.warning,
       ),
       meta: buildResultMeta(result),
+      actionLabel: "Open Remote Sign-In",
     };
   }
 
@@ -1157,6 +1254,7 @@ function mapVerificationResult(result) {
       title: "Paperclip detected but not eligible",
       detail,
       meta: buildResultMeta(result),
+      actionLabel: "Continue to Sign-In",
     };
   }
 
@@ -1168,6 +1266,7 @@ function mapVerificationResult(result) {
       title: "Non-Paperclip endpoint",
       detail,
       meta: buildResultMeta(result),
+      actionLabel: "Continue to Sign-In",
     };
   }
 
@@ -1179,6 +1278,7 @@ function mapVerificationResult(result) {
       title: "Remote certificate rejected",
       detail,
       meta: buildResultMeta(result),
+      actionLabel: "Continue to Sign-In",
     };
   }
 
@@ -1189,6 +1289,7 @@ function mapVerificationResult(result) {
     title: "Could not verify remote",
     detail,
     meta: buildResultMeta(result),
+    actionLabel: "Continue to Sign-In",
   };
 }
 
@@ -1197,6 +1298,8 @@ function buildResultMeta(result) {
   if (result.deploymentMode) meta.push("deploymentMode=" + result.deploymentMode);
   if (result.deploymentExposure) meta.push("deploymentExposure=" + result.deploymentExposure);
   if (result.authReady !== null && result.authReady !== undefined) meta.push("authReady=" + result.authReady);
+  if (result.bootstrapStatus) meta.push("bootstrapStatus=" + result.bootstrapStatus);
+  if (result.bootstrapInviteActive !== null && result.bootstrapInviteActive !== undefined) meta.push("bootstrapInviteActive=" + result.bootstrapInviteActive);
   if (result.sessionState) meta.push("session=" + result.sessionState);
   if (result.version) meta.push("version=" + result.version);
   return meta;
@@ -1272,6 +1375,11 @@ window.paperclipLauncher.onNavigate((payload) => {
     document.getElementById("connectingLabel").textContent = payload.label || "Opening verified remote...";
     document.getElementById("connectingUrl").textContent = payload.url || "";
     showView("connecting");
+    return;
+  }
+
+  if (payload.view === "remote-loop") {
+    renderRemoteLoop(payload);
     return;
   }
 

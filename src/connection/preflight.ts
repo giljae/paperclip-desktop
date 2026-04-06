@@ -1,5 +1,6 @@
 import { normalizeRemoteUrl } from "./validate";
 import type {
+  BootstrapStatus,
   DeploymentExposure,
   DeploymentMode,
   RemotePreflightResult,
@@ -19,6 +20,8 @@ interface HealthPayload {
   deploymentMode?: unknown;
   deploymentExposure?: unknown;
   authReady?: unknown;
+  bootstrapStatus?: unknown;
+  bootstrapInviteActive?: unknown;
 }
 
 export async function preflightRemoteConnection(options: PreflightOptions): Promise<RemotePreflightResult> {
@@ -60,6 +63,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
         authReady: health.authReady,
+        bootstrapStatus: health.bootstrapStatus,
+        bootstrapInviteActive: health.bootstrapInviteActive,
         sessionState: "unknown",
         version: health.version,
         reason: "unreachable",
@@ -77,6 +82,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
         authReady: health.authReady,
+        bootstrapStatus: health.bootstrapStatus,
+        bootstrapInviteActive: health.bootstrapInviteActive,
         sessionState: "unknown",
         version: health.version,
         reason: "unsupported_local_trusted",
@@ -95,6 +102,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
         authReady: health.authReady,
+        bootstrapStatus: health.bootstrapStatus,
+        bootstrapInviteActive: health.bootstrapInviteActive,
         sessionState: "unknown",
         version: health.version,
         reason: "not_paperclip",
@@ -112,6 +121,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
         authReady: health.authReady,
+        bootstrapStatus: health.bootstrapStatus,
+        bootstrapInviteActive: health.bootstrapInviteActive,
         sessionState: "unknown",
         version: health.version,
         reason: "auth_not_ready",
@@ -130,6 +141,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
         authReady: health.authReady,
+        bootstrapStatus: health.bootstrapStatus,
+        bootstrapInviteActive: health.bootstrapInviteActive,
         sessionState: "unknown",
         version: health.version,
         reason: "not_paperclip",
@@ -146,6 +159,8 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
       deploymentMode: health.deploymentMode,
       deploymentExposure: health.deploymentExposure,
       authReady: health.authReady,
+      bootstrapStatus: health.bootstrapStatus,
+      bootstrapInviteActive: health.bootstrapInviteActive,
       sessionState: sessionResponse.sessionState,
       version: health.version,
       warning: buildVersionWarning(health.version, options.localServerVersion, normalized.warning),
@@ -230,6 +245,8 @@ function parseHealthPayload(body: unknown): {
   deploymentMode: DeploymentMode | null;
   deploymentExposure: DeploymentExposure | null;
   authReady: boolean | null;
+  bootstrapStatus: BootstrapStatus | null;
+  bootstrapInviteActive: boolean | null;
 } | null {
   if (!isObject(body)) {
     return null;
@@ -244,6 +261,12 @@ function parseHealthPayload(body: unknown): {
       ? body.deploymentExposure
       : null;
   const authReady = typeof body.authReady === "boolean" ? body.authReady : null;
+  const bootstrapStatus =
+    body.bootstrapStatus === "ready" || body.bootstrapStatus === "bootstrap_pending"
+      ? body.bootstrapStatus
+      : null;
+  const bootstrapInviteActive =
+    typeof body.bootstrapInviteActive === "boolean" ? body.bootstrapInviteActive : null;
   const status = typeof body.status === "string" ? body.status : null;
   const version = typeof body.version === "string" ? body.version : null;
 
@@ -257,6 +280,8 @@ function parseHealthPayload(body: unknown): {
     deploymentMode,
     deploymentExposure,
     authReady,
+    bootstrapStatus,
+    bootstrapInviteActive,
   };
 }
 
@@ -276,6 +301,8 @@ function buildFailure(input: {
     deploymentMode: null,
     deploymentExposure: null,
     authReady: null,
+    bootstrapStatus: null,
+    bootstrapInviteActive: null,
     sessionState: "unknown",
     version: null,
     reason: input.reason,
