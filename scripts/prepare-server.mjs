@@ -147,7 +147,19 @@ for (const arch of targetArches) {
   mkdirSync(stagingDir, { recursive: true });
   writeFileSync(
     path.join(stagingDir, "package.json"),
-    JSON.stringify({ private: true, dependencies: { "@paperclipai/server": serverVersion } }, null, 2),
+    JSON.stringify(
+      {
+        private: true,
+        dependencies: { "@paperclipai/server": serverVersion },
+        overrides: {
+          // cssstyle currently resolves a 5.x css-color release that trips
+          // Node 22's ERR_REQUIRE_ASYNC_MODULE path in the packaged runtime.
+          "@asamuzakjp/css-color": "4.1.2",
+        },
+      },
+      null,
+      2,
+    ),
   );
 
   execSync(

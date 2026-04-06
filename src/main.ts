@@ -360,12 +360,12 @@ function killServer(): Promise<void> {
 
 async function createLauncherWindow(): Promise<BrowserWindow> {
   const launcher = new BrowserWindow({
-    width: 520,
-    height: 520,
-    minWidth: 520,
-    minHeight: 520,
-    resizable: false,
-    maximizable: false,
+    width: 1440,
+    height: 900,
+    minWidth: 900,
+    minHeight: 600,
+    resizable: true,
+    maximizable: true,
     fullscreenable: false,
     title: "Paperclip",
     show: false,
