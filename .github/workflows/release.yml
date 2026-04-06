@@ -14,6 +14,8 @@ on:
         type: choice
         options:
           - mac
+          - windows
+          - linux
           - all
 
 permissions:
@@ -26,6 +28,7 @@ concurrency:
 jobs:
   build-mac:
     name: Build staged macOS artifacts
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platforms == 'mac' || github.event.inputs.platforms == 'all')
     runs-on: macos-latest
     environment: release
     env:
@@ -114,7 +117,7 @@ jobs:
 
   build-linux:
     name: Build Linux release
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.platforms == 'all'
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platforms == 'linux' || github.event.inputs.platforms == 'all')
     runs-on: ubuntu-latest
     env:
       RELEASE_REF: ${{ github.event.inputs.ref || 'master' }}
@@ -151,7 +154,7 @@ jobs:
 
   build-windows:
     name: Build Windows release
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.platforms == 'all'
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.platforms == 'windows' || github.event.inputs.platforms == 'all')
     runs-on: windows-latest
     env:
       RELEASE_REF: ${{ github.event.inputs.ref || 'master' }}
@@ -190,7 +193,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' &&
       (startsWith(github.event.inputs.ref, 'v') || startsWith(github.event.inputs.ref, 'refs/tags/v')) &&
-      needs.build-mac.result == 'success' &&
+      (needs.build-mac.result == 'success' || needs.build-mac.result == 'skipped') &&
       (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped') &&
       (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped')
     needs:

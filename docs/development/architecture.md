@@ -274,8 +274,10 @@ This ensures tools like `claude` CLI are discoverable by the server.
 ┌─────────────────────────────────────────────────────────┐
 │      Release Desktop (manual workflow_dispatch only)     │
 │                                                         │
-│  platforms=mac  → mac build only                        │
-│  platforms=all  → mac + Windows + Linux builds          │
+│  platforms=mac      → mac build only                    │
+│  platforms=windows  → Windows build only                │
+│  platforms=linux    → Linux build only                  │
+│  platforms=all      → mac + Windows + Linux builds      │
 │                                                         │
 │  publish-release uploads all produced assets into the   │
 │  same GitHub release for the chosen tag                 │
@@ -291,14 +293,13 @@ This ensures tools like `claude` CLI are discoverable by the server.
 └─────────────────────────────────────────────────────────┘
 ```
 
-The important current operational detail is that Windows and Linux are not independent release paths yet. In the current workflow:
+The current workflow supports independent platform releases. In the current workflow:
 
-- `platforms` only supports `mac` or `all`
-- the mac build always runs
-- Windows and Linux only run when `platforms=all`
+- `platforms` supports `mac`, `windows`, `linux`, or `all`
+- each platform build runs only when selected
 - the publish job uploads all selected platform artifacts into one GitHub release
 
-That means the platform artifacts are bundled together operationally in the release workflow, even though the app binaries themselves are platform-specific.
+That means the app binaries remain platform-specific, while the release workflow can either publish a single platform or bundle multiple selected platform artifacts into one GitHub release.
 
 ### Creating a release manually
 
@@ -314,6 +315,8 @@ That means the platform artifacts are bundled together operationally in the rele
 4. Run the manual `release.yml` workflow when you are ready to publish binaries to GitHub Releases
 5. Choose:
    - `platforms=mac` for a mac-only release
+   - `platforms=windows` for a Windows-only release
+   - `platforms=linux` for a Linux-only release
    - `platforms=all` for a combined mac + Windows + Linux release
 
 ### Checking for upstream updates manually

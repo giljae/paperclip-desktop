@@ -365,6 +365,18 @@ Mac only:
 gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=mac
 ```
 
+Windows only:
+
+```bash
+gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=windows
+```
+
+Linux only:
+
+```bash
+gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=linux
+```
+
 All platforms:
 
 ```bash
