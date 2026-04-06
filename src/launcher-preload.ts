@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
   openCurrentRemote: () => ipcRenderer.invoke("launcher:open-current-remote"),
   openRemoteInBrowser: (remoteUrl: string) => ipcRenderer.invoke("launcher:open-remote-in-browser", remoteUrl),
   returnToCurrentSession: () => ipcRenderer.invoke("launcher:return-to-current-session"),
+  closeSheet: () => ipcRenderer.invoke("launcher:close-sheet"),
+  reportContentHeight: (height: number) => ipcRenderer.invoke("launcher:report-content-height", height),
   showChooser: () => ipcRenderer.invoke("launcher:show-chooser"),
   onStateChanged: (callback: (snapshot: unknown) => void) => {
     ipcRenderer.on("launcher:state-changed", (_event, snapshot) => callback(snapshot));

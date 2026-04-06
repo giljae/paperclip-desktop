@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  screen,
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -379,15 +380,49 @@ function closeLauncherWindow(): void {
   launcherWindow = null;
 }
 
+function getAttachedLauncherDimensions(): {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+} {
+  const parentBounds = mainWindow?.getBounds();
+  const display = parentBounds
+    ? screen.getDisplayMatching(parentBounds)
+    : screen.getPrimaryDisplay();
+  const workArea = display.workArea;
+  const referenceWidth = parentBounds?.width ?? workArea.width;
+  const referenceHeight = parentBounds?.height ?? workArea.height;
+
+  const width = Math.max(
+    560,
+    Math.min(620, workArea.width - 96, Math.round(referenceWidth * 0.44)),
+  );
+  const height = Math.max(
+    500,
+    Math.min(620, workArea.height - 96, Math.round(referenceHeight * 0.55)),
+  );
+
+  return {
+    width,
+    height,
+    minWidth: 560,
+    minHeight: 400,
+  };
+}
+
 async function createLauncherWindow(presentation: LauncherPresentation): Promise<BrowserWindow> {
   const attached = presentation === "attached";
+  const attachedDimensions = attached
+    ? getAttachedLauncherDimensions()
+    : null;
   const launcher = new BrowserWindow({
-    width: attached ? 720 : 1440,
-    height: attached ? 880 : 900,
-    minWidth: attached ? 720 : 900,
-    minHeight: attached ? 860 : 600,
-    resizable: !attached,
-    maximizable: !attached,
+    width: attached ? attachedDimensions!.width : 1440,
+    height: attached ? attachedDimensions!.height : 900,
+    minWidth: attached ? attachedDimensions!.minWidth : 900,
+    minHeight: attached ? attachedDimensions!.minHeight : 600,
+    resizable: false,
+    maximizable: false,
     fullscreenable: false,
     minimizable: !attached,
     parent: attached ? mainWindow ?? undefined : undefined,
@@ -471,6 +506,7 @@ function buildLauncherSnapshot() {
     initialView: launcherView,
     activeProfileId: snapshot.state.activeProfileId,
     hasCurrentConnection: currentConnection !== null,
+    isAttachedLauncher: launcherPresentation === "attached",
     currentConnectionLabel: describeCurrentConnection(),
     state: snapshot.state,
     profiles: connectionStore.listProfiles(),
@@ -1036,6 +1072,27 @@ function registerLauncherIpc(): void {
     closeLauncherWindow();
     const opened = await reopenCurrentConnectionWindow();
     return { opened };
+  });
+
+  ipcMain.handle("launcher:close-sheet", async () => {
+    closeLauncherWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      return { closed: true };
+    }
+
+    const opened = await reopenCurrentConnectionWindow();
+    return { closed: opened };
+  });
+
+  ipcMain.handle("launcher:report-content-height", async (_event, height: number) => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) return;
+    if (launcherPresentation !== "attached") return;
+    const bounds = launcherWindow.getBounds();
+    const newHeight = Math.max(400, Math.min(height, screen.getDisplayMatching(bounds).workArea.height - 96));
+    if (Math.abs(bounds.height - newHeight) > 2) {
+      launcherWindow.setBounds({ ...bounds, height: newHeight });
+    }
   });
 
   ipcMain.handle("launcher:show-chooser", async () => {

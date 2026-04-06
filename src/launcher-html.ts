@@ -15,18 +15,45 @@ export function getLauncherHtml(): string {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 28px 24px;
+    padding: 28px 28px 28px;
     user-select: none;
     overflow: auto;
   }
 
   .window {
     width: min(100%, 480px);
-    min-height: 380px;
     display: flex;
     flex-direction: column;
     align-items: center;
     position: relative;
+    overflow: visible;
+  }
+
+  .window-close {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #27272a;
+    border-radius: 999px;
+    background: #111114;
+    color: #71717a;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+    z-index: 4;
+  }
+  .window-close.visible {
+    display: inline-flex;
+  }
+  .window-close:hover {
+    background: #18181b;
+    color: #e4e4e7;
+    border-color: #52525b;
   }
 
   .logo {
@@ -147,18 +174,6 @@ export function getLauncherHtml(): string {
     justify-content: center;
   }
 
-  .session-return {
-    width: 340px;
-    margin-top: 20px;
-    display: none;
-  }
-  .session-return.visible {
-    display: block;
-  }
-  .session-return .btn {
-    width: 100%;
-  }
-
   .form-group {
     width: 340px;
     margin-bottom: 16px;
@@ -241,12 +256,38 @@ export function getLauncherHtml(): string {
     margin-bottom: 16px;
     background: #141417;
     text-align: left;
+    transition: padding 0.2s ease, margin-bottom 0.2s ease;
+  }
+  .requirements-box.collapsed {
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+  .requirements-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
   .requirements-title {
     font-size: 12px;
     font-weight: 500;
     color: #a1a1aa;
     margin-bottom: 8px;
+  }
+  .requirements-box.collapsed .requirements-title {
+    margin-bottom: 0;
+  }
+  .requirements-toggle {
+    border: none;
+    background: transparent;
+    color: #71717a;
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 0.15s;
+    font-family: inherit;
+  }
+  .requirements-toggle:hover {
+    color: #e4e4e7;
   }
   .requirements-list {
     display: flex;
@@ -255,6 +296,9 @@ export function getLauncherHtml(): string {
     color: #71717a;
     font-size: 11px;
     line-height: 1.4;
+  }
+  .requirements-box.collapsed .requirements-list {
+    display: none;
   }
   .requirements-list div::before {
     content: "• ";
@@ -594,6 +638,7 @@ export function getLauncherHtml(): string {
 </head>
 <body>
 <div class="window">
+  <button class="window-close" id="windowCloseBtn" aria-label="Close" onclick="closeLauncherSheet()">&times;</button>
   <div class="logo">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg>
   </div>
@@ -635,7 +680,10 @@ export function getLauncherHtml(): string {
     <div class="section-title">Connect to Remote Paperclip</div>
 
     <div class="requirements-box">
-      <div class="requirements-title">Remote requirements</div>
+      <div class="requirements-header">
+        <div class="requirements-title">Remote requirements</div>
+        <button class="requirements-toggle" id="requirementsToggle" onclick="toggleRequirements()">Hide</button>
+      </div>
       <div class="requirements-list">
         <div>Remote mode is for verified Paperclip servers, not arbitrary web pages.</div>
         <div>Shared or networked remotes should run upstream authenticated mode.</div>
@@ -746,9 +794,6 @@ export function getLauncherHtml(): string {
     </div>
   </div>
 
-  <div class="session-return" id="sessionReturn">
-    <button class="btn" id="sessionReturnBtn" onclick="returnToCurrentSession()">Return to Current Session</button>
-  </div>
 </div>
 
 <div class="modal-overlay" id="editModal">
@@ -811,7 +856,7 @@ function showView(name) {
   if (name === "local-boot") {
     resetLocalBoot();
   }
-  updateSessionReturn(name);
+  updateWindowClose(name);
 }
 
 function showChooser() {
@@ -844,6 +889,26 @@ async function openSavedConnections() {
   const nextSnapshot = await launcher.openSavedConnections();
   applySnapshot(nextSnapshot);
   showView("saved");
+}
+
+function setRequirementsCollapsed(collapsed) {
+  const box = document.querySelector(".requirements-box");
+  const toggle = document.getElementById("requirementsToggle");
+  if (!box || !toggle) {
+    return;
+  }
+
+  box.classList.toggle("collapsed", collapsed);
+  toggle.textContent = collapsed ? "Show" : "Hide";
+}
+
+function toggleRequirements() {
+  const box = document.querySelector(".requirements-box");
+  if (!box) {
+    return;
+  }
+
+  setRequirementsCollapsed(!box.classList.contains("collapsed"));
 }
 
 function resetVerificationUi() {
@@ -897,6 +962,7 @@ async function verifyRemote() {
 
   const result = await launcher.verifyRemote({ remoteUrl });
   lastVerification = result;
+  setRequirementsCollapsed(true);
 
   if (result.reason === "invalid_url") {
     document.getElementById("testStatus").innerHTML = "";
@@ -999,8 +1065,8 @@ async function switchToLocal() {
   await launcher.connectLocal({ rememberChoice });
 }
 
-async function returnToCurrentSession() {
-  await launcher.returnToCurrentSession();
+async function closeLauncherSheet() {
+  await launcher.closeSheet();
 }
 
 async function openCurrentRemoteInBrowser() {
@@ -1050,16 +1116,11 @@ function needsBrowserStep(result) {
   return result && (result.bootstrapStatus === "bootstrap_pending" || result.sessionState === "signed_out");
 }
 
-function updateSessionReturn(viewName) {
-  const container = document.getElementById("sessionReturn");
-  const button = document.getElementById("sessionReturnBtn");
+function updateWindowClose(viewName) {
+  const button = document.getElementById("windowCloseBtn");
   const hiddenViews = new Set(["local-boot", "connecting"]);
-  const visible = !!(snapshot && snapshot.hasCurrentConnection && !hiddenViews.has(viewName));
-
-  container.classList.toggle("visible", visible);
-  button.textContent = snapshot && snapshot.currentConnectionLabel
-    ? snapshot.currentConnectionLabel
-    : "Return to Current Session";
+  const visible = !!(snapshot && snapshot.isAttachedLauncher && !hiddenViews.has(viewName));
+  button.classList.toggle("visible", visible);
 }
 
 function renderConnections() {
@@ -1416,7 +1477,7 @@ function applySnapshot(nextSnapshot) {
   document.getElementById("rememberChoice").checked =
     !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile;
   renderConnections();
-  updateSessionReturn((document.querySelector(".view.active") || {}).id?.replace("view-", "") || nextSnapshot.initialView || "chooser");
+  updateWindowClose((document.querySelector(".view.active") || {}).id?.replace("view-", "") || nextSnapshot.initialView || "chooser");
 }
 
 function escapeHtml(value) {
@@ -1491,6 +1552,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   const initialSnapshot = await launcher.bootstrap();
   applySnapshot(initialSnapshot);
   showView(initialSnapshot.initialView || "chooser");
+
+  // Auto-resize the Electron window to fit content
+  const windowEl = document.querySelector(".window");
+  if (windowEl && launcher.reportContentHeight) {
+    const report = () => {
+      const body = document.body;
+      const height = body.scrollHeight + 24;
+      launcher.reportContentHeight(Math.ceil(height));
+    };
+    new ResizeObserver(report).observe(windowEl);
+    report();
+  }
 });
 </script>
 </body>
