@@ -37,9 +37,9 @@ export function buildRemoteLoopPayload(result: RemotePreflightResult): RemoteLoo
       state,
       title: "Instance setup required",
       detail:
-        "This verified remote does not have an instance admin yet. Open the remote setup flow to finish bootstrap, or go back and choose a different connection.",
+        "This verified remote does not have an instance admin yet. Open the setup flow in your browser to finish bootstrap, then retry verification here.",
       url: result.normalizedUrl,
-      primaryActionLabel: "Open Remote Setup",
+      primaryActionLabel: "Open Setup in Browser",
     };
   }
 
@@ -47,8 +47,8 @@ export function buildRemoteLoopPayload(result: RemotePreflightResult): RemoteLoo
     state,
     title: "Remote sign-in required",
     detail:
-      "Desktop verified this Paperclip remote, but there is no active session yet. Open the remote sign-in flow, or go back and choose a different connection.",
+      "Desktop verified this Paperclip remote, but there is no active session yet. Open the sign-in flow in your browser, then retry verification here.",
     url: result.normalizedUrl,
-    primaryActionLabel: "Open Remote Sign-In",
+    primaryActionLabel: "Open Sign-In in Browser",
   };
 }

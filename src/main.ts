@@ -801,6 +801,21 @@ async function bootRemote(options: {
     });
   }
 
+  const remoteLoopPayload = buildRemoteLoopPayload(result);
+  if (savedProfile) {
+    connectionStore.recordRemoteHealth(savedProfile.id, result);
+  }
+  if (options.rememberChoiceExplicit) {
+    connectionStore.setRememberedProfile(savedProfile?.id ?? null, options.rememberChoice === true);
+  }
+  sendLauncherState();
+
+  if (remoteLoopPayload) {
+    currentConnection = null;
+    await ensureLauncherWindow("remote-loop", remoteLoopPayload);
+    return;
+  }
+
   const partition = remotePartitionKey(savedProfile?.id ?? null, result.origin);
   const window = createMainWindow({
     mode: "remote_existing",
@@ -838,16 +853,7 @@ async function bootRemote(options: {
     if (savedProfile) {
       connectionStore.recordConnectionResult(savedProfile.id, result);
     }
-    if (options.rememberChoiceExplicit) {
-      connectionStore.setRememberedProfile(savedProfile?.id ?? null, options.rememberChoice === true);
-    }
     sendLauncherState();
-
-    const remoteLoopPayload = buildRemoteLoopPayload(result);
-    if (remoteLoopPayload) {
-      await ensureLauncherWindow("remote-loop", remoteLoopPayload);
-      return;
-    }
 
     if (launcherWindow && !launcherWindow.isDestroyed()) {
       launcherWindow.close();
@@ -963,6 +969,12 @@ function registerLauncherIpc(): void {
   ipcMain.handle("launcher:open-current-remote", async () => {
     const opened = await reopenCurrentConnectionWindow();
     return { opened };
+  });
+
+  ipcMain.handle("launcher:open-remote-in-browser", async (_event, remoteUrl: string) => {
+    const normalized = normalizeRemoteUrl(remoteUrl);
+    await shell.openExternal(normalized.normalizedUrl);
+    return { opened: true, url: normalized.normalizedUrl };
   });
 
   ipcMain.handle("launcher:show-chooser", async () => {

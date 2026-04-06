@@ -197,6 +197,20 @@ export function getLauncherHtml(): string {
     margin-bottom: 16px;
   }
 
+  #view-remote-form .form-actions,
+  #view-remote-loop .btn-row,
+  #view-error .btn-row {
+    width: 340px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #view-remote-form .form-actions .btn,
+  #view-remote-loop .btn-row .btn,
+  #view-error .btn-row .btn {
+    width: 100%;
+  }
+
   .back-link {
     font-size: 12px;
     color: #52525b;
@@ -638,8 +652,8 @@ export function getLauncherHtml(): string {
 
     <div class="form-actions">
       <button class="btn" onclick="verifyRemote()">Verify Remote</button>
-      <button class="btn" id="signinBtn" onclick="continueToSignIn()" disabled>Continue to Sign-In</button>
-      <button class="btn primary" id="saveBtn" onclick="connectAndSave()" disabled>Connect &amp; Save</button>
+      <button class="btn primary" id="signinBtn" onclick="continueToSignIn()" disabled>Continue to Sign-In</button>
+      <button class="btn" id="saveBtn" onclick="connectAndSave()" disabled>Connect &amp; Save</button>
     </div>
 
     <div class="back-link" onclick="showChooser()">&larr; Back to chooser</div>
@@ -662,7 +676,8 @@ export function getLauncherHtml(): string {
     </div>
 
     <div class="btn-row">
-      <button class="btn primary" id="remoteLoopPrimaryBtn" onclick="openCurrentRemoteWindow()">Open Remote</button>
+      <button class="btn primary" id="remoteLoopPrimaryBtn" onclick="openCurrentRemoteInBrowser()">Open Remote in Browser</button>
+      <button class="btn" onclick="retryRemoteVerification()">Retry Verification</button>
       <button class="btn" onclick="showChooser()">Back to Connections</button>
       <button class="btn" onclick="switchToLocal()">Switch to Local</button>
     </div>
@@ -841,6 +856,7 @@ function renderStatus(result) {
 
   success.style.display = mapped.success ? "block" : "none";
   signinBtn.textContent = mapped.actionLabel;
+  saveBtn.textContent = mapped.saveLabel;
   signinBtn.disabled = !mapped.success;
   saveBtn.disabled = !mapped.success;
 }
@@ -852,7 +868,7 @@ function renderRemoteLoop(payload) {
   document.getElementById("remoteLoopTitle").textContent = payload.title || "Remote sign-in required";
   document.getElementById("remoteLoopDetail").textContent = payload.detail || "";
   document.getElementById("remoteLoopUrl").textContent = payload.url || "";
-  document.getElementById("remoteLoopPrimaryBtn").textContent = payload.primaryActionLabel || "Open Remote";
+  document.getElementById("remoteLoopPrimaryBtn").textContent = payload.primaryActionLabel || "Open Remote in Browser";
   showView("remote-loop");
 }
 
@@ -897,6 +913,10 @@ async function continueToSignIn() {
     saveProfile: false,
     rememberChoice,
   });
+
+  if (needsBrowserStep(lastVerification)) {
+    await launcher.openRemoteInBrowser(lastVerification.normalizedUrl);
+  }
 }
 
 async function connectAndSave() {
@@ -961,8 +981,30 @@ async function switchToLocal() {
   await launcher.connectLocal({ rememberChoice });
 }
 
-async function openCurrentRemoteWindow() {
-  await launcher.openCurrentRemote();
+async function openCurrentRemoteInBrowser() {
+  const remoteUrl = lastRemoteLoop && lastRemoteLoop.url
+    ? lastRemoteLoop.url
+    : document.getElementById("remoteUrl").value.trim();
+  if (!remoteUrl) {
+    return;
+  }
+
+  await launcher.openRemoteInBrowser(remoteUrl);
+}
+
+async function retryRemoteVerification() {
+  const remoteUrl = lastRemoteLoop && lastRemoteLoop.url
+    ? lastRemoteLoop.url
+    : document.getElementById("remoteUrl").value.trim();
+
+  if (!remoteUrl) {
+    showView("remote-form");
+    return;
+  }
+
+  document.getElementById("remoteUrl").value = remoteUrl;
+  showView("remote-form");
+  await verifyRemote();
 }
 
 function showRemoteConnectingState(result) {
@@ -980,6 +1022,10 @@ function showRemoteConnectingState(result) {
         : "Opening verified remote...";
   document.getElementById("connectingUrl").textContent = result.normalizedUrl || document.getElementById("remoteUrl").value.trim();
   showView("connecting");
+}
+
+function needsBrowserStep(result) {
+  return result && (result.bootstrapStatus === "bootstrap_pending" || result.sessionState === "signed_out");
 }
 
 function renderConnections() {
@@ -1211,7 +1257,8 @@ function mapVerificationResult(result) {
         result.warning,
       ),
       meta: buildResultMeta(result),
-      actionLabel: "Open Remote Setup",
+      actionLabel: "Open Setup in Browser",
+      saveLabel: "Save Connection",
     };
   }
 
@@ -1226,7 +1273,8 @@ function mapVerificationResult(result) {
         result.warning,
       ),
       meta: buildResultMeta(result),
-      actionLabel: "Open Remote",
+      actionLabel: "Connect Remote",
+      saveLabel: "Connect & Save",
     };
   }
 
@@ -1241,7 +1289,8 @@ function mapVerificationResult(result) {
         result.warning,
       ),
       meta: buildResultMeta(result),
-      actionLabel: "Open Remote Sign-In",
+      actionLabel: "Open Sign-In in Browser",
+      saveLabel: "Save Connection",
     };
   }
 
@@ -1255,6 +1304,7 @@ function mapVerificationResult(result) {
       detail,
       meta: buildResultMeta(result),
       actionLabel: "Continue to Sign-In",
+      saveLabel: "Connect & Save",
     };
   }
 
@@ -1267,6 +1317,7 @@ function mapVerificationResult(result) {
       detail,
       meta: buildResultMeta(result),
       actionLabel: "Continue to Sign-In",
+      saveLabel: "Connect & Save",
     };
   }
 
@@ -1279,6 +1330,7 @@ function mapVerificationResult(result) {
       detail,
       meta: buildResultMeta(result),
       actionLabel: "Continue to Sign-In",
+      saveLabel: "Connect & Save",
     };
   }
 
@@ -1290,6 +1342,7 @@ function mapVerificationResult(result) {
     detail,
     meta: buildResultMeta(result),
     actionLabel: "Continue to Sign-In",
+    saveLabel: "Connect & Save",
   };
 }
 

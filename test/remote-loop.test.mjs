@@ -35,7 +35,7 @@ test("remote loop prefers bootstrap-pending over signed-out", () => {
 
   const payload = buildRemoteLoopPayload(result);
   assert.equal(payload?.state, "bootstrap_pending");
-  assert.equal(payload?.primaryActionLabel, "Open Remote Setup");
+  assert.equal(payload?.primaryActionLabel, "Open Setup in Browser");
 });
 
 test("remote loop shows sign-in-required for verified signed-out remotes", () => {
@@ -47,7 +47,7 @@ test("remote loop shows sign-in-required for verified signed-out remotes", () =>
 
   const payload = buildRemoteLoopPayload(result);
   assert.equal(payload?.state, "signin_required");
-  assert.equal(payload?.primaryActionLabel, "Open Remote Sign-In");
+  assert.equal(payload?.primaryActionLabel, "Open Sign-In in Browser");
 });
 
 test("remote loop is disabled for ready signed-in remotes", () => {

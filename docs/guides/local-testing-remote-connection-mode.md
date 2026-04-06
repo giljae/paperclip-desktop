@@ -161,7 +161,8 @@ This is the easiest way to test:
 
 If that authenticated test instance has not been bootstrapped yet, the desktop launcher now stays open in a remote recovery loop and gives you:
 
-- `Open Remote Setup`
+- `Open Setup in Browser`
+- `Retry Verification`
 - `Back to Connections`
 - `Switch to Local`
 
