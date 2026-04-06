@@ -29,15 +29,15 @@ paperclip-desktop/
   .github/workflows/
     release.yml              Builds desktop binaries on v* tag push
     sync-upstream.yml        Polls npm every 6h for @paperclipai/server updates
-  docs-desktop/              Documentation (this directory)
+  docs/development/          Documentation (this directory)
   electron-builder.yml       electron-builder config (targets, signing, publish)
   package.json               Dependencies and scripts
   tsconfig.json              TypeScript configuration
 ```
 
-For the current macOS packaging flow, see `docs-desktop/macos-staged-release.md`.
-For the current release automation decision log, see `docs-desktop/release-automation-log.md`.
-For the repeatable operator checklist, see `docs-desktop/release-runbook.md`.
+For the current macOS packaging flow, see `docs/development/macos-staged-release.md`.
+For the current release automation decision log, see `docs/development/release-automation-log.md`.
+For the repeatable operator checklist, see `docs/development/release-runbook.md`.
 
 ## How it works
 
@@ -139,7 +139,7 @@ The repository also now has a documented two-phase release automation model:
 
 This avoids paying the notarization cost during every build verification run and prevents duplicate notarization passes on CI.
 
-For the full rationale and operator instructions, see `docs-desktop/release-automation-log.md`.
+For the full rationale and operator instructions, see `docs/development/release-automation-log.md`.
 
 ### `scripts/prepare-server.mjs` in detail
 
@@ -371,8 +371,8 @@ When enabling CI notarization later:
 
 2. Uncomment the corresponding env vars in `.github/workflows/release.yml`
 
-For the complete local signing and staged packaging workflow, see `docs-desktop/macos-staged-release.md`.
-For the release-automation split between build verification and approved notarization, see `docs-desktop/release-automation-log.md`.
+For the complete local signing and staged packaging workflow, see `docs/development/macos-staged-release.md`.
+For the release-automation split between build verification and approved notarization, see `docs/development/release-automation-log.md`.
 
 ### GitHub repo setup for releases
 
@@ -405,7 +405,7 @@ The current staged macOS flow requires a real `Developer ID Application` identit
 - Re-run the staged build for a single arch to isolate the issue:
   `pnpm release:mac:local:x64` or `pnpm release:mac:local:arm64`
 - Check `release/local-macos/{arch}/verification-summary.json`
-- See `docs-desktop/macos-staged-release.md` for the full troubleshooting flow
+- See `docs/development/macos-staged-release.md` for the full troubleshooting flow
 
 ### UI not loading
 

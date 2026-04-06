@@ -366,7 +366,7 @@ If you change the mac packaging path, keep these aligned:
 - `scripts/stage-after-pack.mjs`
 - `scripts/repackage-prebuilt-macos.mjs`
 - `scripts/notarize-prebuilt-macos.mjs`
-- `docs-desktop/macos-staged-release.md`
+- `docs/development/macos-staged-release.md`
 - this file
 
 The release automation is only as good as the consistency between local flow, CI build flow, and operator docs.

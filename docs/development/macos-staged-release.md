@@ -13,8 +13,8 @@ This document explains the current macOS release architecture in this repository
 
 This guide is written for developers who know nothing about the project yet.
 
-For the CI/release workflow decision log, see `docs-desktop/release-automation-log.md`.
-For the repeatable release operator steps, see `docs-desktop/release-runbook.md`.
+For the CI/release workflow decision log, see `docs/development/release-automation-log.md`.
+For the repeatable release operator steps, see `docs/development/release-runbook.md`.
 
 ## Short version
 
@@ -343,7 +343,7 @@ The intended CI pattern is:
 
 That split exists to keep macOS build verification fast enough and to avoid burning runner minutes on Apple notarization before the artifacts are approved.
 
-The detailed CI decision log and instructions live in `docs-desktop/release-automation-log.md`.
+The detailed CI decision log and instructions live in `docs/development/release-automation-log.md`.
 
 ## What files to test
 

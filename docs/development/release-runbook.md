@@ -414,5 +414,5 @@ Primary scripts and workflows:
 
 Background docs:
 
-- `docs-desktop/macos-staged-release.md`
-- `docs-desktop/release-automation-log.md`
+- `docs/development/macos-staged-release.md`
+- `docs/development/release-automation-log.md`

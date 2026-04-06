@@ -115,7 +115,7 @@ tsconfig.json
 .github/workflows/
   sync-upstream.yml        <- new: polls npm every 6h
   release.yml              <- new: desktop binary releases on v* tags
-docs-desktop/
+docs/development/
   restructure-log.md       <- this file
 ```
 
