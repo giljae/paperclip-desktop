@@ -430,7 +430,7 @@ async function createLauncherWindow(presentation: LauncherPresentation): Promise
     title: "Paperclip",
     show: false,
     backgroundColor: "#0a0a0a",
-    titleBarStyle: process.platform === "darwin" && attached ? "hiddenInset" : undefined,
+    titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1254,8 +1254,7 @@ app.whenReady().then(async () => {
     }
   }
 
-  const chooserMode = connectionStore.getSnapshot().state.chooserMode;
-  await ensureLauncherWindow(chooserMode === "remote_existing" ? "remote-form" : "chooser");
+  await ensureLauncherWindow("chooser");
 });
 
 app.on("activate", () => {
