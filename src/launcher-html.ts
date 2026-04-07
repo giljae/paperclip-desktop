@@ -1496,6 +1496,13 @@ function escapeJsSingleQuote(value) {
   return String(value).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 }
 
+function measureLauncherHeight(windowEl) {
+  const styles = window.getComputedStyle(document.body);
+  const verticalPadding = Number.parseFloat(styles.paddingTop || "0")
+    + Number.parseFloat(styles.paddingBottom || "0");
+  return windowEl.getBoundingClientRect().height + verticalPadding;
+}
+
 window.paperclipLauncher.onStateChanged((nextSnapshot) => {
   applySnapshot(nextSnapshot);
 });
@@ -1557,8 +1564,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const windowEl = document.querySelector(".window");
   if (windowEl && launcher.reportContentHeight) {
     const report = () => {
-      const body = document.body;
-      const height = body.scrollHeight + 24;
+      const height = measureLauncherHeight(windowEl);
       launcher.reportContentHeight(Math.ceil(height));
     };
     new ResizeObserver(report).observe(windowEl);
