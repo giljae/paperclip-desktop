@@ -406,6 +406,47 @@ function closeLauncherWindow(): void {
   launcherWindow = null;
 }
 
+let launcherResizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function animateLauncherHeight(
+  bounds: { x: number; y: number; width: number; height: number },
+  targetHeight: number,
+): void {
+  if (launcherResizeTimer) {
+    clearInterval(launcherResizeTimer);
+    launcherResizeTimer = null;
+  }
+
+  const startHeight = bounds.height;
+  const delta = targetHeight - startHeight;
+  if (Math.abs(delta) < 3) return;
+
+  const durationMs = 180;
+  const stepMs = 16;
+  const steps = Math.max(1, Math.round(durationMs / stepMs));
+  let step = 0;
+
+  launcherResizeTimer = setInterval(() => {
+    step += 1;
+    if (!launcherWindow || launcherWindow.isDestroyed()) {
+      if (launcherResizeTimer) clearInterval(launcherResizeTimer);
+      launcherResizeTimer = null;
+      return;
+    }
+
+    const t = Math.min(step / steps, 1);
+    // ease-out cubic
+    const eased = 1 - Math.pow(1 - t, 3);
+    const h = Math.round(startHeight + delta * eased);
+    launcherWindow.setBounds({ ...bounds, height: h });
+
+    if (t >= 1) {
+      if (launcherResizeTimer) clearInterval(launcherResizeTimer);
+      launcherResizeTimer = null;
+    }
+  }, stepMs);
+}
+
 function getAttachedLauncherDimensions(): {
   width: number;
   height: number;
@@ -1124,11 +1165,11 @@ function registerLauncherIpc(): void {
 
   ipcMain.handle("launcher:report-content-height", async (_event, height: number) => {
     if (!launcherWindow || launcherWindow.isDestroyed()) return;
-    if (launcherPresentation !== "attached") return;
     const bounds = launcherWindow.getBounds();
-    const newHeight = Math.max(400, Math.min(height, screen.getDisplayMatching(bounds).workArea.height - 96));
+    const maxHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
+    const newHeight = Math.max(400, Math.min(height, maxHeight));
     if (Math.abs(bounds.height - newHeight) > 2) {
-      launcherWindow.setBounds({ ...bounds, height: newHeight });
+      animateLauncherHeight(bounds, newHeight);
     }
   });
 

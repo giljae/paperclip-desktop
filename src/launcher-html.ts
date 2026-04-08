@@ -83,54 +83,54 @@ export function getLauncherHtml(): string {
   }
   .view.active { display: flex; }
 
-  .chooser-cards {
+  .tab-bar {
     display: flex;
-    gap: 14px;
+    gap: 0;
     margin-bottom: 24px;
-  }
-
-  .chooser-card {
-    width: 200px;
-    padding: 20px 16px;
     border: 1px solid #27272a;
-    border-radius: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    width: 280px;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 9px 0;
+    font-size: 13px;
+    font-family: inherit;
+    border: none;
     cursor: pointer;
-    text-align: center;
-    transition: border-color 0.2s, background 0.2s;
-    background: transparent;
-    color: #e4e4e7;
-  }
-  .chooser-card:hover {
-    border-color: #52525b;
     background: #18181b;
+    color: #71717a;
+    transition: background 0.2s, color 0.2s;
   }
-  .chooser-card.selected {
-    border-color: #a1a1aa;
-    background: #1c1c1f;
+  .tab-btn + .tab-btn { border-left: 1px solid #27272a; }
+  .tab-btn.active { background: #27272a; color: #e4e4e7; }
+  .tab-btn:focus-visible { outline: 2px solid #52525b; outline-offset: -2px; }
+
+  .tab-content { display: none; flex-direction: column; align-items: center; width: 100%; }
+  .tab-content.active { display: flex; }
+
+  .local-hero-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: #111114;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
   }
-  .chooser-card .card-icon {
-    width: 32px;
-    height: 32px;
-    margin: 0 auto 12px;
-  }
-  .chooser-card .card-label {
+  .local-hero-title {
     font-size: 14px;
     font-weight: 500;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
-  .chooser-card .card-desc {
-    font-size: 11px;
-    color: #71717a;
-    line-height: 1.4;
-  }
-  .chooser-card .badge {
-    display: inline-block;
-    font-size: 10px;
-    background: #27272a;
-    color: #a1a1aa;
-    padding: 2px 7px;
-    border-radius: 4px;
-    margin-bottom: 10px;
+  .local-hero-desc {
+    font-size: 12px;
+    color: #52525b;
+    margin-bottom: 24px;
+    text-align: center;
+    max-width: 300px;
   }
 
   .remember-row {
@@ -246,62 +246,6 @@ export function getLauncherHtml(): string {
   }
   .back-link:hover { color: #a1a1aa; }
 
-  .requirements-box {
-    width: 340px;
-    border: 1px solid #27272a;
-    border-radius: 8px;
-    padding: 14px;
-    margin-bottom: 16px;
-    background: #141417;
-    text-align: left;
-    transition: padding 0.2s ease, margin-bottom 0.2s ease;
-  }
-  .requirements-box.collapsed {
-    padding: 10px 14px;
-    margin-bottom: 12px;
-  }
-  .requirements-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .requirements-title {
-    font-size: 12px;
-    font-weight: 500;
-    color: #a1a1aa;
-    margin-bottom: 8px;
-  }
-  .requirements-box.collapsed .requirements-title {
-    margin-bottom: 0;
-  }
-  .requirements-toggle {
-    border: none;
-    background: transparent;
-    color: #71717a;
-    font-size: 11px;
-    cursor: pointer;
-    transition: color 0.15s;
-    font-family: inherit;
-  }
-  .requirements-toggle:hover {
-    color: #e4e4e7;
-  }
-  .requirements-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    color: #71717a;
-    font-size: 11px;
-    line-height: 1.4;
-  }
-  .requirements-box.collapsed .requirements-list {
-    display: none;
-  }
-  .requirements-list div::before {
-    content: "• ";
-    color: #a1a1aa;
-  }
 
   .status-badge {
     display: inline-flex;
@@ -633,11 +577,88 @@ export function getLauncherHtml(): string {
     to { opacity: 1; transform: translateY(0); }
   }
 
-  .chooser-card:focus-visible,
   .conn-item:focus-visible,
-  .btn:focus-visible {
+  .btn:focus-visible,
+  .tab-conn-item:focus-visible {
     outline: 2px solid #52525b;
     outline-offset: 2px;
+  }
+
+  .tab-conn-list {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .tab-conn-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .tab-conn-item:hover {
+    border-color: #52525b;
+    background: #18181b;
+  }
+  .tab-conn-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #27272a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .tab-conn-icon svg { width: 14px; height: 14px; }
+  .tab-conn-info { flex: 1; min-width: 0; }
+  .tab-conn-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-conn-url {
+    font-size: 10px;
+    color: #52525b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-conn-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tab-conn-dot.healthy { background: #4ade80; }
+  .tab-conn-dot.auth-required { background: #fbbf24; }
+  .tab-conn-dot.unreachable { background: #f87171; }
+  .tab-conn-dot.unknown { background: #3f3f46; }
+  .tab-conn-edit {
+    padding: 4px 6px;
+    border: none;
+    background: transparent;
+    color: #3f3f46;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .tab-conn-edit:hover { color: #a1a1aa; background: #27272a; }
+  .tab-empty {
+    text-align: center;
+    padding: 24px 0;
+    color: #3f3f46;
+    font-size: 12px;
   }
 </style>
 </head>
@@ -650,51 +671,34 @@ export function getLauncherHtml(): string {
   <div class="app-title">Paperclip</div>
 
   <div class="view active" id="view-chooser">
-    <div class="section-subtitle">How would you like to start?</div>
-    <div class="chooser-cards" role="listbox" aria-label="Connection mode">
-      <div class="chooser-card selected" id="card-local" tabindex="0" role="option" onclick="selectCard('local')">
-        <span class="badge">Recommended</span>
-        <div class="card-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        </div>
-        <div class="card-label">Run Local</div>
-        <div class="card-desc">Start the embedded Paperclip server on this machine with the current trusted local flow.</div>
-      </div>
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" id="tab-btn-local" role="tab" tabindex="0" onclick="switchTab('local')">Local</button>
+      <button class="tab-btn" id="tab-btn-remote" role="tab" tabindex="-1" onclick="switchTab('remote')">Remote</button>
+    </div>
 
-      <div class="chooser-card" id="card-remote" tabindex="0" role="option" onclick="selectCard('remote')">
-        <div class="card-icon" style="margin-top: 22px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        </div>
-        <div class="card-label">Connect Remote</div>
-        <div class="card-desc">Connect only to verified remote Paperclip instances that expose upstream authenticated mode.</div>
+    <div class="tab-content active" id="tab-local" role="tabpanel">
+      <div class="local-hero-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <div class="local-hero-title">Run Local Server</div>
+      <div class="local-hero-desc">Start the embedded Paperclip server on this machine with trusted local access.</div>
+      <button class="btn primary" style="min-width:180px;" onclick="launchLocal()">Launch</button>
+      <div class="remember-row" style="margin-top:20px;margin-bottom:0;">
+        <input type="checkbox" id="rememberLocal">
+        <label for="rememberLocal">Always start local on launch</label>
       </div>
     </div>
 
-    <div class="remember-row">
-      <input type="checkbox" id="rememberChoice">
-      <label for="rememberChoice">Remember my choice and don't ask again</label>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn" onclick="openSavedConnections()">Saved Connections</button>
-      <button class="btn primary" onclick="chooserContinue()">Continue</button>
+    <div class="tab-content" id="tab-remote" role="tabpanel">
+      <div class="tab-conn-list" id="tabRemoteList"></div>
+      <div class="btn-row" style="gap:8px;">
+        <button class="btn" onclick="openAddRemoteFromChooser()">+ Add Remote Connection</button>
+      </div>
     </div>
   </div>
 
   <div class="view" id="view-remote-form">
     <div class="section-title">Connect to Remote Paperclip</div>
-
-    <div class="requirements-box">
-      <div class="requirements-header">
-        <div class="requirements-title">Remote requirements</div>
-        <button class="requirements-toggle" id="requirementsToggle" onclick="toggleRequirements()">Hide</button>
-      </div>
-      <div class="requirements-list">
-        <div>Remote mode is for verified Paperclip servers, not arbitrary web pages.</div>
-        <div>Shared or networked remotes should run upstream authenticated mode.</div>
-        <div>The remote server owns sign-in. Desktop does not store remote passwords.</div>
-      </div>
-    </div>
 
     <div class="form-group">
       <label for="remoteUrl">Remote URL</label>
@@ -722,7 +726,7 @@ export function getLauncherHtml(): string {
       <button class="btn" id="saveBtn" onclick="connectAndSave()" disabled>Connect &amp; Save</button>
     </div>
 
-    <div class="back-link" onclick="showChooser()">&larr; Back to chooser</div>
+    <div class="back-link" onclick="showChooserRemoteTab()">&larr; Back to connections</div>
   </div>
 
   <div class="view" id="view-connecting">
@@ -742,7 +746,7 @@ export function getLauncherHtml(): string {
     <div class="btn-row">
       <button class="btn" id="errorRetryBtn" onclick="retryLastAction()">Retry</button>
       <button class="btn" id="errorTryDifferentBtn" onclick="showView('remote-form')">Try Different Connection</button>
-      <button class="btn" id="errorSwitchRemoteBtn" onclick="showView('remote-form')" style="display:none;">Switch to Remote</button>
+      <button class="btn" id="errorSwitchRemoteBtn" onclick="showChooserRemoteTab()" style="display:none;">Switch to Remote</button>
       <button class="btn primary" id="errorSwitchLocalBtn" onclick="switchToLocal()">Switch to Local</button>
     </div>
 
@@ -869,8 +873,8 @@ function focusFirstInteractive(viewName) {
   requestAnimationFrame(() => {
     switch (viewName) {
       case "chooser": {
-        const sel = selectedCard === "remote" ? "card-remote" : "card-local";
-        document.getElementById(sel)?.focus();
+        const activeTab = selectedCard === "remote" ? "tab-btn-remote" : "tab-btn-local";
+        document.getElementById(activeTab)?.focus();
         break;
       }
       case "remote-form":
@@ -893,31 +897,69 @@ function focusFirstInteractive(viewName) {
   });
 }
 
+function switchTab(tab) {
+  selectedCard = tab;
+  document.getElementById("tab-btn-local").classList.toggle("active", tab === "local");
+  document.getElementById("tab-btn-remote").classList.toggle("active", tab === "remote");
+  document.getElementById("tab-btn-local").tabIndex = tab === "local" ? 0 : -1;
+  document.getElementById("tab-btn-remote").tabIndex = tab === "remote" ? 0 : -1;
+  document.getElementById("tab-local").classList.toggle("active", tab === "local");
+  document.getElementById("tab-remote").classList.toggle("active", tab === "remote");
+  if (tab === "remote") {
+    renderTabRemoteList();
+  }
+}
+
 function showChooser() {
-  selectCard(snapshot && snapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
+  const tab = snapshot && snapshot.state.chooserMode === "remote_existing" ? "remote" : "local";
+  switchTab(tab);
   showView("chooser");
   launcher.showChooser();
 }
 
-function selectCard(type) {
-  selectedCard = type;
-  document.getElementById("card-local").classList.toggle("selected", type === "local");
-  document.getElementById("card-remote").classList.toggle("selected", type === "remote");
+function showChooserRemoteTab() {
+  switchTab("remote");
+  showView("chooser");
+  launcher.setChooserMode("remote_existing");
 }
 
-async function chooserContinue() {
-  const rememberChoice = document.getElementById("rememberChoice").checked;
-  if (selectedCard === "remote") {
-    await launcher.setChooserMode("remote_existing");
-    showView("remote-form");
+function renderTabRemoteList() {
+  const list = document.getElementById("tabRemoteList");
+  if (!snapshot) { list.innerHTML = '<div class="tab-empty">No remote connections yet.</div>'; return; }
+
+  const remotes = (snapshot.profiles || []).filter((p) => p.mode === "remote_existing");
+  if (!remotes.length) {
+    list.innerHTML = '<div class="tab-empty">No remote connections yet.</div>';
     return;
   }
 
+  const globeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+
+  list.innerHTML = remotes.map((p) => {
+    return '<div class="tab-conn-item" tabindex="0" onclick="quickConnect(\'' + escapeJsSingleQuote(p.id) + '\')">' +
+      '<div class="tab-conn-icon">' + globeIcon + '</div>' +
+      '<div class="tab-conn-info">' +
+        '<div class="tab-conn-name">' + escapeHtml(p.name) + '</div>' +
+        '<div class="tab-conn-url">' + escapeHtml(p.remoteUrl || "") + '</div>' +
+      '</div>' +
+      '<div class="tab-conn-dot ' + statusClass(p) + '"></div>' +
+      '<button class="tab-conn-edit" onclick="event.stopPropagation();openEditModal(\'' + escapeJsSingleQuote(p.id) + '\')">Edit</button>' +
+    '</div>';
+  }).join("");
+}
+
+async function launchLocal() {
+  const rememberChoice = document.getElementById("rememberLocal").checked;
   await launcher.setChooserMode("local_embedded");
   lastErrorAction = { type: "local", rememberChoice };
   resetLocalBoot();
   showView("local-boot");
   await launcher.connectLocal({ rememberChoice });
+}
+
+function openAddRemoteFromChooser() {
+  launcher.setChooserMode("remote_existing");
+  showView("remote-form");
 }
 
 async function openSavedConnections() {
@@ -926,25 +968,6 @@ async function openSavedConnections() {
   showView("saved");
 }
 
-function setRequirementsCollapsed(collapsed) {
-  const box = document.querySelector(".requirements-box");
-  const toggle = document.getElementById("requirementsToggle");
-  if (!box || !toggle) {
-    return;
-  }
-
-  box.classList.toggle("collapsed", collapsed);
-  toggle.textContent = collapsed ? "Show" : "Hide";
-}
-
-function toggleRequirements() {
-  const box = document.querySelector(".requirements-box");
-  if (!box) {
-    return;
-  }
-
-  setRequirementsCollapsed(!box.classList.contains("collapsed"));
-}
 
 function resetVerificationUi() {
   document.getElementById("urlError").style.display = "none";
@@ -997,7 +1020,6 @@ async function verifyRemote() {
   try {
     const result = await launcher.verifyRemote({ remoteUrl });
     lastVerification = result;
-    setRequirementsCollapsed(true);
 
     if (result.reason === "invalid_url") {
       document.getElementById("testStatus").innerHTML = "";
@@ -1018,7 +1040,7 @@ async function continueToSignIn() {
     return;
   }
 
-  const rememberChoice = document.getElementById("rememberChoice").checked;
+  const rememberChoice = false;
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   const displayName = document.getElementById("displayName").value.trim();
   lastErrorAction = {
@@ -1044,7 +1066,7 @@ async function connectAndSave() {
     return;
   }
 
-  const rememberChoice = document.getElementById("rememberChoice").checked;
+  const rememberChoice = false;
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   const displayName = document.getElementById("displayName").value.trim();
   lastErrorAction = {
@@ -1114,7 +1136,7 @@ function configureErrorButtons() {
 }
 
 async function switchToLocal() {
-  const rememberChoice = document.getElementById("rememberChoice").checked;
+  const rememberChoice = false;
   lastErrorAction = { type: "local", rememberChoice };
   resetLocalBoot();
   showView("local-boot");
@@ -1531,11 +1553,13 @@ function applySnapshot(nextSnapshot) {
   snapshot = nextSnapshot;
   const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
   if (activeView === "chooser" || !activeView) {
-    selectCard(nextSnapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
+    switchTab(nextSnapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
   }
-  document.getElementById("rememberChoice").checked =
-    !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile;
+  document.getElementById("rememberLocal").checked =
+    !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile
+    && nextSnapshot.state.chooserMode !== "remote_existing";
   renderConnections();
+  renderTabRemoteList();
   updateWindowClose(activeView || nextSnapshot.initialView || "chooser");
 }
 
@@ -1573,7 +1597,7 @@ window.paperclipLauncher.onNavigate((payload) => {
   }
 
   if (payload.view === "chooser") {
-    showView("chooser");
+    showChooser();
     return;
   }
 
@@ -1640,17 +1664,24 @@ document.addEventListener("keydown", (event) => {
   const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
 
   if (activeView === "chooser") {
-    if (event.key === "ArrowLeft") {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
-      selectCard("local");
-      document.getElementById("card-local").focus();
-    } else if (event.key === "ArrowRight") {
+      const next = selectedCard === "local" ? "remote" : "local";
+      switchTab(next);
+      document.getElementById("tab-btn-" + next).focus();
+    } else if (event.key === "Enter" && document.activeElement?.classList.contains("tab-conn-item")) {
       event.preventDefault();
-      selectCard("remote");
-      document.getElementById("card-remote").focus();
-    } else if (event.key === "Enter" && (document.activeElement?.classList.contains("chooser-card") || document.activeElement === document.getElementById("rememberChoice"))) {
+      document.activeElement.click();
+    } else if (event.key === "ArrowDown" && selectedCard === "remote") {
       event.preventDefault();
-      chooserContinue();
+      const items = Array.from(document.querySelectorAll(".tab-conn-item"));
+      const idx = items.indexOf(document.activeElement);
+      if (items.length) items[Math.min(idx + 1, items.length - 1)].focus();
+    } else if (event.key === "ArrowUp" && selectedCard === "remote") {
+      event.preventDefault();
+      const items = Array.from(document.querySelectorAll(".tab-conn-item"));
+      const idx = items.indexOf(document.activeElement);
+      if (items.length) items[Math.max(idx - 1, 0)].focus();
     }
     return;
   }

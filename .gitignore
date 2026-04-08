@@ -8,6 +8,7 @@ build/server-staging/
 build/node-bin/
 build/upstream-clone/
 docs/development/paperclip/
+docs/mockups/chooser-variations.html
 
 # Electron-builder output
 release/
