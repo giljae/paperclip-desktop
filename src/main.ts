@@ -524,10 +524,10 @@ async function ensureLauncherWindow(view: LauncherView, payload?: object): Promi
     launcher = launcherWindow!;
   }
 
-  if (!launcher.isVisible()) {
+  if (!launcher.isVisible() && !mustRecreate) {
     launcher.show();
+    launcher.focus();
   }
-  launcher.focus();
   sendLauncherState();
   sendLauncherNavigation(view, payload);
   return launcher;
@@ -1171,6 +1171,8 @@ function registerLauncherIpc(): void {
 
     if (!launcherWindow.isVisible()) {
       launcherWindow.setBounds({ ...bounds, height: newHeight });
+      launcherWindow.show();
+      launcherWindow.focus();
       return;
     }
 
