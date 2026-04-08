@@ -415,10 +415,10 @@ async function createLauncherWindow(presentation: LauncherPresentation): Promise
     ? getAttachedLauncherDimensions()
     : null;
   const launcher = new BrowserWindow({
-    width: attached ? attachedDimensions!.width : 1440,
-    height: attached ? attachedDimensions!.height : 900,
-    minWidth: attached ? attachedDimensions!.minWidth : 900,
-    minHeight: attached ? attachedDimensions!.minHeight : 600,
+    width: attached ? attachedDimensions!.width : 560,
+    height: attached ? attachedDimensions!.height : 620,
+    minWidth: attached ? attachedDimensions!.minWidth : 560,
+    minHeight: attached ? attachedDimensions!.minHeight : 400,
     resizable: false,
     maximizable: false,
     fullscreenable: false,

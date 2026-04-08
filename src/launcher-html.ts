@@ -632,6 +632,13 @@ export function getLauncherHtml(): string {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  .chooser-card:focus-visible,
+  .conn-item:focus-visible,
+  .btn:focus-visible {
+    outline: 2px solid #52525b;
+    outline-offset: 2px;
+  }
 </style>
 </head>
 <body>
@@ -644,8 +651,8 @@ export function getLauncherHtml(): string {
 
   <div class="view active" id="view-chooser">
     <div class="section-subtitle">How would you like to start?</div>
-    <div class="chooser-cards">
-      <div class="chooser-card selected" id="card-local" onclick="selectCard('local')">
+    <div class="chooser-cards" role="listbox" aria-label="Connection mode">
+      <div class="chooser-card selected" id="card-local" tabindex="0" role="option" onclick="selectCard('local')">
         <span class="badge">Recommended</span>
         <div class="card-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -654,7 +661,7 @@ export function getLauncherHtml(): string {
         <div class="card-desc">Start the embedded Paperclip server on this machine with the current trusted local flow.</div>
       </div>
 
-      <div class="chooser-card" id="card-remote" onclick="selectCard('remote')">
+      <div class="chooser-card" id="card-remote" tabindex="0" role="option" onclick="selectCard('remote')">
         <div class="card-icon" style="margin-top: 22px">
           <svg viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         </div>
@@ -733,9 +740,10 @@ export function getLauncherHtml(): string {
     </div>
 
     <div class="btn-row">
-      <button class="btn" onclick="retryLastAction()">Retry</button>
-      <button class="btn" onclick="showView('remote-form')">Choose another connection</button>
-      <button class="btn primary" onclick="switchToLocal()">Switch to Local</button>
+      <button class="btn" id="errorRetryBtn" onclick="retryLastAction()">Retry</button>
+      <button class="btn" id="errorTryDifferentBtn" onclick="showView('remote-form')">Try Different Connection</button>
+      <button class="btn" id="errorSwitchRemoteBtn" onclick="showView('remote-form')" style="display:none;">Switch to Remote</button>
+      <button class="btn primary" id="errorSwitchLocalBtn" onclick="switchToLocal()">Switch to Local</button>
     </div>
 
     <div class="back-link" onclick="showChooser()">&larr; Back to chooser</div>
@@ -778,7 +786,7 @@ export function getLauncherHtml(): string {
 
 </div>
 
-<div class="modal-overlay" id="editModal">
+<div class="modal-overlay" id="editModal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <div class="modal-title" id="modalTitle">Add Connection</div>
 
@@ -800,12 +808,28 @@ export function getLauncherHtml(): string {
   </div>
 </div>
 
+<div class="modal-overlay" id="deleteModal" onclick="if(event.target===this)cancelDelete()">
+  <div class="modal">
+    <div class="modal-title">Delete connection?</div>
+    <div style="font-size:13px;color:#a1a1aa;margin-bottom:20px;line-height:1.5;">
+      "<span id="deleteProfileName"></span>" will be removed. Session data for this connection will also be cleared. This cannot be undone.
+    </div>
+    <div class="form-actions" style="justify-content:flex-end;">
+      <button class="btn" id="deleteCancelBtn" onclick="cancelDelete()">Cancel</button>
+      <button class="btn danger" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const launcher = window.paperclipLauncher;
 let selectedCard = "local";
 let editingId = null;
 let lastVerification = null;
 let lastErrorAction = null;
+let lastRemoteLoop = null;
+let pendingDeleteId = null;
+let deleteTriggerEl = null;
 let snapshot = null;
 
 const stepElements = {
@@ -838,10 +862,39 @@ function showView(name) {
     resetLocalBoot();
   }
   updateWindowClose(name);
+  focusFirstInteractive(name);
+}
+
+function focusFirstInteractive(viewName) {
+  requestAnimationFrame(() => {
+    switch (viewName) {
+      case "chooser": {
+        const sel = selectedCard === "remote" ? "card-remote" : "card-local";
+        document.getElementById(sel)?.focus();
+        break;
+      }
+      case "remote-form":
+        document.getElementById("remoteUrl")?.focus();
+        break;
+      case "saved": {
+        const first = document.querySelector(".conn-item");
+        if (first) { first.focus(); }
+        else { document.querySelector("#view-saved .btn")?.focus(); }
+        break;
+      }
+      case "error": {
+        const firstBtn = document.querySelector("#view-error .btn-row .btn:not([style*='display:none']):not([style*='display: none'])");
+        firstBtn?.focus();
+        break;
+      }
+      default:
+        break;
+    }
+  });
 }
 
 function showChooser() {
-  selectCard("local");
+  selectCard(snapshot && snapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
   showView("chooser");
   launcher.showChooser();
 }
@@ -929,20 +982,35 @@ function renderStatus(result) {
 async function verifyRemote() {
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   resetVerificationUi();
-  document.getElementById("testStatus").innerHTML = '<div class="status-badge testing"><div class="dot"></div>Verifying remote...</div>';
 
-  const result = await launcher.verifyRemote({ remoteUrl });
-  lastVerification = result;
-  setRequirementsCollapsed(true);
-
-  if (result.reason === "invalid_url") {
-    document.getElementById("testStatus").innerHTML = "";
-    document.getElementById("urlError").textContent = result.detail || "Enter a valid http(s) URL.";
+  if (!remoteUrl) {
+    document.getElementById("urlError").textContent = "Enter a valid http(s) URL.";
     document.getElementById("urlError").style.display = "block";
     return;
   }
 
-  renderStatus(result);
+  const verifyBtn = document.querySelector("#view-remote-form .form-actions .btn:first-child");
+  verifyBtn.disabled = true;
+  verifyBtn.textContent = "Verifying...";
+  document.getElementById("testStatus").innerHTML = '<div class="status-badge testing"><div class="dot"></div>Verifying remote...</div>';
+
+  try {
+    const result = await launcher.verifyRemote({ remoteUrl });
+    lastVerification = result;
+    setRequirementsCollapsed(true);
+
+    if (result.reason === "invalid_url") {
+      document.getElementById("testStatus").innerHTML = "";
+      document.getElementById("urlError").textContent = result.detail || "Enter a valid http(s) URL.";
+      document.getElementById("urlError").style.display = "block";
+      return;
+    }
+
+    renderStatus(result);
+  } finally {
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = "Verify Remote";
+  }
 }
 
 async function continueToSignIn() {
@@ -1024,6 +1092,27 @@ async function retryLastAction() {
   });
 }
 
+function configureErrorButtons() {
+  const retryBtn = document.getElementById("errorRetryBtn");
+  const tryDiffBtn = document.getElementById("errorTryDifferentBtn");
+  const switchRemoteBtn = document.getElementById("errorSwitchRemoteBtn");
+  const switchLocalBtn = document.getElementById("errorSwitchLocalBtn");
+
+  const isLocal = lastErrorAction && lastErrorAction.type === "local";
+  const hasAction = !!lastErrorAction;
+
+  retryBtn.style.display = hasAction ? "" : "none";
+  tryDiffBtn.style.display = isLocal ? "none" : "";
+  switchRemoteBtn.style.display = isLocal ? "" : "none";
+  switchLocalBtn.style.display = isLocal ? "none" : "";
+
+  if (isLocal) {
+    switchRemoteBtn.classList.add("primary");
+  } else {
+    switchRemoteBtn.classList.remove("primary");
+  }
+}
+
 async function switchToLocal() {
   const rememberChoice = document.getElementById("rememberChoice").checked;
   lastErrorAction = { type: "local", rememberChoice };
@@ -1084,7 +1173,7 @@ function renderConnections() {
         "</div>"
       : "";
 
-    return "<div class=\"conn-item " + (snapshot.activeProfileId === profile.id ? "active-conn" : "") + "\" ondblclick=\"quickConnect('" + escapeJsSingleQuote(profile.id) + "')\">" +
+    return "<div class=\"conn-item " + (snapshot.activeProfileId === profile.id ? "active-conn" : "") + "\" tabindex=\"0\" onclick=\"quickConnect('" + escapeJsSingleQuote(profile.id) + "')\">" +
       '<div class="conn-icon">' + icon + "</div>" +
       '<div class="conn-info">' +
         '<div class="conn-name">' + escapeHtml(profile.name) + "</div>" +
@@ -1150,10 +1239,38 @@ async function duplicateConn(profileId) {
   showView("saved");
 }
 
-async function deleteConn(profileId) {
-  const nextSnapshot = await launcher.deleteProfile(profileId);
+function deleteConn(profileId) {
+  const profile = snapshot.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  pendingDeleteId = profileId;
+  deleteTriggerEl = document.activeElement;
+  document.getElementById("deleteProfileName").textContent = profile.name;
+  document.getElementById("deleteModal").classList.add("active");
+  document.getElementById("deleteCancelBtn").focus();
+}
+
+async function confirmDelete() {
+  if (!pendingDeleteId) {
+    return;
+  }
+
+  const nextSnapshot = await launcher.deleteProfile(pendingDeleteId);
+  pendingDeleteId = null;
+  document.getElementById("deleteModal").classList.remove("active");
   applySnapshot(nextSnapshot);
   showView("saved");
+}
+
+function cancelDelete() {
+  pendingDeleteId = null;
+  document.getElementById("deleteModal").classList.remove("active");
+  if (deleteTriggerEl && typeof deleteTriggerEl.focus === "function") {
+    deleteTriggerEl.focus();
+  }
+  deleteTriggerEl = null;
 }
 
 async function quickConnect(profileId) {
@@ -1366,12 +1483,15 @@ function mapVerificationResult(result) {
     };
   }
 
+  const unreachableDetail = result.normalizedUrl && result.normalizedUrl.startsWith("http:")
+    ? detail + " If this server redirects HTTP to HTTPS, try entering the HTTPS URL directly."
+    : detail;
   return {
     success: false,
     badgeClass: "unreachable",
     badge: "Host unreachable",
     title: "Could not verify remote",
-    detail,
+    detail: unreachableDetail,
     meta: buildResultMeta(result),
     actionLabel: "Continue to Sign-In",
     saveLabel: "Connect & Save",
@@ -1409,11 +1529,14 @@ function relativeTime(timestamp) {
 
 function applySnapshot(nextSnapshot) {
   snapshot = nextSnapshot;
-  selectCard(selectedCard);
+  const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
+  if (activeView === "chooser" || !activeView) {
+    selectCard(nextSnapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
+  }
   document.getElementById("rememberChoice").checked =
     !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile;
   renderConnections();
-  updateWindowClose((document.querySelector(".view.active") || {}).id?.replace("view-", "") || nextSnapshot.initialView || "chooser");
+  updateWindowClose(activeView || nextSnapshot.initialView || "chooser");
 }
 
 function escapeHtml(value) {
@@ -1483,8 +1606,119 @@ window.paperclipLauncher.onBootStatus((payload) => {
 window.paperclipLauncher.onConnectionError((payload) => {
   document.getElementById("errorTitle").textContent = payload.title;
   document.getElementById("errorDetail").textContent = payload.detail;
+  configureErrorButtons();
   showView("error");
 });
+
+// ---------------------------------------------------------------------------
+// Keyboard handling
+// ---------------------------------------------------------------------------
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    const deleteModal = document.getElementById("deleteModal");
+    if (deleteModal.classList.contains("active")) {
+      cancelDelete();
+      return;
+    }
+
+    const editModal = document.getElementById("editModal");
+    if (editModal.classList.contains("active")) {
+      closeModal();
+      return;
+    }
+
+    if (snapshot && snapshot.isAttachedLauncher) {
+      const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
+      if (activeView !== "local-boot" && activeView !== "connecting") {
+        closeLauncherSheet();
+      }
+    }
+    return;
+  }
+
+  const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
+
+  if (activeView === "chooser") {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      selectCard("local");
+      document.getElementById("card-local").focus();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      selectCard("remote");
+      document.getElementById("card-remote").focus();
+    } else if (event.key === "Enter" && (document.activeElement?.classList.contains("chooser-card") || document.activeElement === document.getElementById("rememberChoice"))) {
+      event.preventDefault();
+      chooserContinue();
+    }
+    return;
+  }
+
+  if (activeView === "saved") {
+    const items = Array.from(document.querySelectorAll(".conn-item"));
+    const focusedIndex = items.indexOf(document.activeElement);
+    if (event.key === "ArrowDown" && items.length) {
+      event.preventDefault();
+      items[Math.min(focusedIndex + 1, items.length - 1)].focus();
+    } else if (event.key === "ArrowUp" && items.length) {
+      event.preventDefault();
+      items[Math.max(focusedIndex - 1, 0)].focus();
+    } else if (event.key === "Enter" && focusedIndex >= 0) {
+      event.preventDefault();
+      items[focusedIndex].click();
+    }
+    return;
+  }
+
+  if (activeView === "remote-form") {
+    if (event.key === "Enter" && document.activeElement?.id === "remoteUrl") {
+      event.preventDefault();
+      verifyRemote();
+    }
+    return;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Modal focus trap
+// ---------------------------------------------------------------------------
+
+function trapFocusInModal(modalEl, event) {
+  const focusable = modalEl.querySelectorAll("button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])");
+  if (!focusable.length) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+
+  const deleteModal = document.getElementById("deleteModal");
+  if (deleteModal.classList.contains("active")) {
+    trapFocusInModal(deleteModal, event);
+    return;
+  }
+
+  const editModal = document.getElementById("editModal");
+  if (editModal.classList.contains("active")) {
+    trapFocusInModal(editModal, event);
+    return;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Initialization
+// ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", async () => {
   const initialSnapshot = await launcher.bootstrap();
