@@ -16,6 +16,12 @@ import path from "node:path";
 import treeKill from "tree-kill";
 import { initAutoUpdater } from "./updater";
 import { getLauncherHtml } from "./launcher-html";
+import {
+  shouldHandleTrackedServerExit,
+  shouldKillSupersededServer,
+  shouldRestorePreviousTrackedServer,
+  shouldStopAttemptedServer,
+} from "./connection/local-server-lifecycle";
 import { preflightRemoteConnection } from "./connection/preflight";
 import { ConnectionStore, getConnectionsFilePath } from "./connection/profiles";
 import { normalizeRemoteUrl } from "./connection/validate";
@@ -363,6 +369,28 @@ function killServer(): Promise<void> {
   });
 }
 
+function killChildProcess(processToKill: ChildProcess | null): Promise<void> {
+  return new Promise((resolve) => {
+    if (!processToKill?.pid) {
+      resolve();
+      return;
+    }
+
+    treeKill(processToKill.pid, "SIGTERM", () => {
+      resolve();
+    });
+  });
+}
+
+function trackServerProcess(processToTrack: ChildProcess | null): void {
+  serverProcess = processToTrack;
+  if (processToTrack?.pid) {
+    writePidFile(processToTrack.pid);
+    return;
+  }
+  cleanupPidFile();
+}
+
 // ---------------------------------------------------------------------------
 // Launcher and window policy
 // ---------------------------------------------------------------------------
@@ -683,6 +711,8 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
   }
 
   const previousConnectionMode = currentConnection?.mode ?? null;
+  const previousServerProcess = previousConnectionMode === "local_embedded" ? serverProcess : null;
+  let nextServerProcess: ChildProcess | null = null;
   await ensureLauncherWindow("local-boot");
 
   try {
@@ -694,7 +724,8 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     }
 
     sendBootStatus("database", "Launching embedded PostgreSQL...", 15);
-    serverProcess = startServer(serverPort);
+    nextServerProcess = startServer(serverPort);
+    trackServerProcess(nextServerProcess);
 
     const logFile = path.join(app.getPath("userData"), "server.log");
     const logStream = fs.createWriteStream(logFile, { flags: "a" });
@@ -732,15 +763,16 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
       }
     };
 
-    serverProcess.stdout?.on("data", onServerData);
-    serverProcess.stderr?.on("data", onServerData);
+    nextServerProcess.stdout?.on("data", onServerData);
+    nextServerProcess.stderr?.on("data", onServerData);
 
-    serverProcess.on("exit", (code, signal) => {
+    nextServerProcess.on("exit", (code, signal) => {
       logStream.end();
-      if (!serverProcess) {
+      if (!shouldHandleTrackedServerExit(serverProcess, nextServerProcess)) {
         return;
       }
 
+      trackServerProcess(null);
       const tail = serverOutputLines.slice(-30).join("\n");
       console.error(`Server exited unexpectedly (code=${code}, signal=${signal})\n${tail}`);
       void dialog
@@ -772,6 +804,14 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     clearInterval(progressInterval);
 
     if (bootId !== bootSequence) {
+      if (shouldStopAttemptedServer(nextServerProcess, serverProcess)) {
+        await killChildProcess(nextServerProcess);
+        if (shouldRestorePreviousTrackedServer(previousServerProcess, nextServerProcess, serverProcess)) {
+          trackServerProcess(previousServerProcess);
+        } else {
+          trackServerProcess(null);
+        }
+      }
       return;
     }
 
@@ -790,12 +830,20 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     await window.loadURL(startUrl);
     if (bootId !== bootSequence) {
       window.destroy();
+      if (shouldStopAttemptedServer(nextServerProcess, serverProcess)) {
+        await killChildProcess(nextServerProcess);
+        if (shouldRestorePreviousTrackedServer(previousServerProcess, nextServerProcess, serverProcess)) {
+          trackServerProcess(previousServerProcess);
+        } else {
+          trackServerProcess(null);
+        }
+      }
       return;
     }
 
     await replaceMainWindow(window);
-    if (previousConnectionMode === "local_embedded") {
-      await killServer();
+    if (shouldKillSupersededServer(previousServerProcess, nextServerProcess)) {
+      await killChildProcess(previousServerProcess);
     }
     currentConnection = {
       mode: "local_embedded",
@@ -817,8 +865,13 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     closeLauncherWindow();
     initAutoUpdater(window);
   } catch (error) {
-    if (!previousConnectionMode) {
-      await killServer();
+    if (shouldStopAttemptedServer(nextServerProcess, serverProcess)) {
+      await killChildProcess(nextServerProcess);
+      if (shouldRestorePreviousTrackedServer(previousServerProcess, nextServerProcess, serverProcess)) {
+        trackServerProcess(previousServerProcess);
+      } else {
+        trackServerProcess(null);
+      }
     }
     sendConnectionError(
       "Failed to start local Paperclip",
