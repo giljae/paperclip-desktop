@@ -181,6 +181,7 @@ for (const arch of targetArches) {
   }
 
   cpSync(path.join(stagingDir, "node_modules"), path.join(bundleServerDir, "node_modules"), { recursive: true });
+  rmSync(path.join(bundleServerDir, "node_modules", ".bin"), { recursive: true, force: true });
 
   if (platform === "darwin") {
     console.log(`[prepare-server] Fixing dylib symlinks for ${variant} embedded-postgres...`);
