@@ -524,12 +524,10 @@ async function ensureLauncherWindow(view: LauncherView, payload?: object): Promi
     launcher = launcherWindow!;
   }
 
-  if (!launcher.isVisible() && (!mustRecreate || presentation === "standalone")) {
+  if (!launcher.isVisible()) {
     launcher.show();
   }
-  if (launcher.isVisible()) {
-    launcher.focus();
-  }
+  launcher.focus();
   sendLauncherState();
   sendLauncherNavigation(view, payload);
   return launcher;
@@ -1166,16 +1164,13 @@ function registerLauncherIpc(): void {
   });
 
   ipcMain.handle("launcher:report-content-height", async (_event, height: number) => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return;
+    if (!launcherWindow || launcherWindow.isDestroyed() || launcherPresentation !== "attached") return;
     const bounds = launcherWindow.getBounds();
     const maxHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
     const newHeight = Math.max(400, Math.min(height, maxHeight));
 
     if (!launcherWindow.isVisible()) {
-      // First measurement: set size instantly and show without animation
       launcherWindow.setBounds({ ...bounds, height: newHeight });
-      launcherWindow.show();
-      launcherWindow.focus();
       return;
     }
 
@@ -1343,6 +1338,7 @@ app.whenReady().then(async () => {
     }
   }
 
+  connectionStore.setChooserMode("local_embedded");
   await ensureLauncherWindow("chooser");
 });
 
