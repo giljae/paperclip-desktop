@@ -159,14 +159,7 @@ This is the easiest way to test:
 - reconnect behavior
 - remote window isolation
 
-If that authenticated test instance has not been bootstrapped yet, the desktop launcher now stays open in a remote recovery loop and gives you:
-
-- `Open Setup in Browser`
-- `Retry Verification`
-- `Back to Connections`
-- `Switch to Local`
-
-That is the expected behavior for `bootstrapStatus=bootstrap_pending`.
+If that authenticated test instance has not been bootstrapped yet, or there is no active session yet, Desktop should still open the verified remote and let the upstream Paperclip UI handle setup or sign-in in-app.
 
 ## What to verify manually
 
@@ -174,7 +167,7 @@ That is the expected behavior for `bootstrapStatus=bootstrap_pending`.
 - `Remember my choice and don't ask again`
 - remote verification success for authenticated Paperclip remotes
 - sign-in-required remote behavior
-- setup-required remote behavior, including the launcher recovery loop
+- setup-required remote behavior in the remote Paperclip UI
 - blocking of:
   - non-Paperclip endpoints
   - `local_trusted` remotes

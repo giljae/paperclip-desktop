@@ -68,7 +68,6 @@ type LauncherView =
   | "saved"
   | "local-boot"
   | "connecting"
-  | "remote-loop"
   | "error";
 type LauncherPresentation = "standalone" | "attached";
 type BootStep = "init" | "database" | "server" | "ready";
@@ -1051,12 +1050,6 @@ function registerLauncherIpc(): void {
   ipcMain.handle("launcher:open-current-remote", async () => {
     const opened = await reopenCurrentConnectionWindow();
     return { opened };
-  });
-
-  ipcMain.handle("launcher:open-remote-in-browser", async (_event, remoteUrl: string) => {
-    const normalized = normalizeRemoteUrl(remoteUrl);
-    await shell.openExternal(normalized.normalizedUrl);
-    return { opened: true, url: normalized.normalizedUrl };
   });
 
   ipcMain.handle("launcher:return-to-current-session", async () => {

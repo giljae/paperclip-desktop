@@ -226,7 +226,6 @@ export function getLauncherHtml(): string {
   }
 
   #view-remote-form .form-actions,
-  #view-remote-loop .btn-row,
   #view-error .btn-row {
     width: 340px;
     flex-direction: column;
@@ -234,7 +233,6 @@ export function getLauncherHtml(): string {
   }
 
   #view-remote-form .form-actions .btn,
-  #view-remote-loop .btn-row .btn,
   #view-error .btn-row .btn {
     width: 100%;
   }
@@ -728,22 +726,6 @@ export function getLauncherHtml(): string {
     </div>
   </div>
 
-  <div class="view" id="view-remote-loop">
-    <div class="loop-card">
-      <div class="loop-eyebrow" id="remoteLoopEyebrow">Verified Remote</div>
-      <div class="loop-title" id="remoteLoopTitle">Remote sign-in required</div>
-      <div class="loop-detail" id="remoteLoopDetail">Desktop verified the remote, but it still needs work in the remote window before you can continue here.</div>
-      <div class="loop-url" id="remoteLoopUrl"></div>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn primary" id="remoteLoopPrimaryBtn" onclick="openCurrentRemoteInBrowser()">Open Remote in Browser</button>
-      <button class="btn" onclick="retryRemoteVerification()">Retry Verification</button>
-      <button class="btn" onclick="showChooser()">Back to Connections</button>
-      <button class="btn" onclick="switchToLocal()">Switch to Local</button>
-    </div>
-  </div>
-
   <div class="view" id="view-error">
     <div class="error-box">
       <div class="error-title" id="errorTitle">Remote not eligible</div>
@@ -824,7 +806,6 @@ let selectedCard = "local";
 let editingId = null;
 let lastVerification = null;
 let lastErrorAction = null;
-let lastRemoteLoop = null;
 let snapshot = null;
 
 const stepElements = {
@@ -945,17 +926,6 @@ function renderStatus(result) {
   saveBtn.disabled = !mapped.success;
 }
 
-function renderRemoteLoop(payload) {
-  lastRemoteLoop = payload;
-  document.getElementById("remoteLoopEyebrow").textContent =
-    payload.state === "bootstrap_pending" ? "Remote Setup Required" : "Verified Remote";
-  document.getElementById("remoteLoopTitle").textContent = payload.title || "Remote sign-in required";
-  document.getElementById("remoteLoopDetail").textContent = payload.detail || "";
-  document.getElementById("remoteLoopUrl").textContent = payload.url || "";
-  document.getElementById("remoteLoopPrimaryBtn").textContent = payload.primaryActionLabel || "Open Remote in Browser";
-  showView("remote-loop");
-}
-
 async function verifyRemote() {
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   resetVerificationUi();
@@ -1064,32 +1034,6 @@ async function switchToLocal() {
 
 async function closeLauncherSheet() {
   await launcher.closeSheet();
-}
-
-async function openCurrentRemoteInBrowser() {
-  const remoteUrl = lastRemoteLoop && lastRemoteLoop.url
-    ? lastRemoteLoop.url
-    : document.getElementById("remoteUrl").value.trim();
-  if (!remoteUrl) {
-    return;
-  }
-
-  await launcher.openRemoteInBrowser(remoteUrl);
-}
-
-async function retryRemoteVerification() {
-  const remoteUrl = lastRemoteLoop && lastRemoteLoop.url
-    ? lastRemoteLoop.url
-    : document.getElementById("remoteUrl").value.trim();
-
-  if (!remoteUrl) {
-    showView("remote-form");
-    return;
-  }
-
-  document.getElementById("remoteUrl").value = remoteUrl;
-  showView("remote-form");
-  await verifyRemote();
 }
 
 function showRemoteConnectingState(result) {
@@ -1523,11 +1467,6 @@ window.paperclipLauncher.onNavigate((payload) => {
     document.getElementById("connectingLabel").textContent = payload.label || "Opening verified remote...";
     document.getElementById("connectingUrl").textContent = payload.url || "";
     showView("connecting");
-    return;
-  }
-
-  if (payload.view === "remote-loop") {
-    renderRemoteLoop(payload);
     return;
   }
 

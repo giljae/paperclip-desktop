@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
   connectSavedProfile: (profileId: string) => ipcRenderer.invoke("launcher:connect-saved-profile", profileId),
   openSavedConnections: () => ipcRenderer.invoke("launcher:open-saved-connections"),
   openCurrentRemote: () => ipcRenderer.invoke("launcher:open-current-remote"),
-  openRemoteInBrowser: (remoteUrl: string) => ipcRenderer.invoke("launcher:open-remote-in-browser", remoteUrl),
   returnToCurrentSession: () => ipcRenderer.invoke("launcher:return-to-current-session"),
   closeSheet: () => ipcRenderer.invoke("launcher:close-sheet"),
   reportContentHeight: (height: number) => ipcRenderer.invoke("launcher:report-content-height", height),
