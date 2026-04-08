@@ -1596,11 +1596,7 @@ function measureLauncherHeight(windowEl) {
   return windowEl.getBoundingClientRect().height + verticalPadding;
 }
 
-function installAttachedResizeReporting(initialSnapshot) {
-  if (!initialSnapshot.isAttachedLauncher) {
-    return;
-  }
-
+function installContentResizeReporting() {
   const windowEl = document.querySelector(".window");
   if (!windowEl || !launcher.reportContentHeight) {
     return;
@@ -1790,7 +1786,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const initialSnapshot = await launcher.bootstrap();
   applySnapshot(initialSnapshot);
   showView(initialSnapshot.initialView || "chooser");
-  installAttachedResizeReporting(initialSnapshot);
+  installContentResizeReporting();
 });
 </script>
 </body>

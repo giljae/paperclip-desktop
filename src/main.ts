@@ -1164,7 +1164,7 @@ function registerLauncherIpc(): void {
   });
 
   ipcMain.handle("launcher:report-content-height", async (_event, height: number) => {
-    if (!launcherWindow || launcherWindow.isDestroyed() || launcherPresentation !== "attached") return;
+    if (!launcherWindow || launcherWindow.isDestroyed()) return;
     const bounds = launcherWindow.getBounds();
     const maxHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
     const newHeight = Math.max(400, Math.min(height, maxHeight));
