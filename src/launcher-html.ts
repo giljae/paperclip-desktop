@@ -911,10 +911,14 @@ function switchTab(tab) {
   }
 }
 
-function showChooser() {
+function renderChooser() {
   const tab = snapshot && snapshot.state.chooserMode === "remote_existing" ? "remote" : "local";
   switchTab(tab);
   showView("chooser");
+}
+
+function showChooser() {
+  renderChooser();
   launcher.showChooser();
 }
 
@@ -1592,6 +1596,31 @@ function measureLauncherHeight(windowEl) {
   return windowEl.getBoundingClientRect().height + verticalPadding;
 }
 
+function installAttachedResizeReporting(initialSnapshot) {
+  if (!initialSnapshot.isAttachedLauncher) {
+    return;
+  }
+
+  const windowEl = document.querySelector(".window");
+  if (!windowEl || !launcher.reportContentHeight) {
+    return;
+  }
+
+  let lastReportedHeight = 0;
+  const report = () => {
+    const height = Math.ceil(measureLauncherHeight(windowEl));
+    if (Math.abs(height - lastReportedHeight) < 2) {
+      return;
+    }
+
+    lastReportedHeight = height;
+    launcher.reportContentHeight(height);
+  };
+
+  new ResizeObserver(report).observe(windowEl);
+  report();
+}
+
 window.paperclipLauncher.onStateChanged((nextSnapshot) => {
   applySnapshot(nextSnapshot);
 });
@@ -1603,7 +1632,7 @@ window.paperclipLauncher.onNavigate((payload) => {
   }
 
   if (payload.view === "chooser") {
-    showChooser();
+    renderChooser();
     return;
   }
 
@@ -1761,17 +1790,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const initialSnapshot = await launcher.bootstrap();
   applySnapshot(initialSnapshot);
   showView(initialSnapshot.initialView || "chooser");
-
-  // Auto-resize the Electron window to fit content
-  const windowEl = document.querySelector(".window");
-  if (windowEl && launcher.reportContentHeight) {
-    const report = () => {
-      const height = measureLauncherHeight(windowEl);
-      launcher.reportContentHeight(Math.ceil(height));
-    };
-    new ResizeObserver(report).observe(windowEl);
-    report();
-  }
+  installAttachedResizeReporting(initialSnapshot);
 });
 </script>
 </body>

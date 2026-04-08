@@ -7,6 +7,7 @@ import {
   screen,
   shell,
   type MenuItemConstructorOptions,
+  type Session,
 } from "electron";
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -532,10 +533,12 @@ async function ensureLauncherWindow(view: LauncherView, payload?: object): Promi
     launcher = launcherWindow!;
   }
 
-  if (!launcher.isVisible()) {
+  if (!launcher.isVisible() && !mustRecreate) {
     launcher.show();
   }
-  launcher.focus();
+  if (launcher.isVisible()) {
+    launcher.focus();
+  }
   sendLauncherState();
   sendLauncherNavigation(view, payload);
   return launcher;
@@ -689,6 +692,14 @@ async function replaceMainWindow(nextWindow: BrowserWindow): Promise<void> {
   mainWindow = nextWindow;
 }
 
+async function resetLocalEmbeddedUiSession(origin: string, windowSession: Session): Promise<void> {
+  await windowSession.clearCache();
+  await windowSession.clearStorageData({
+    origin,
+    storages: ["serviceworkers", "cachestorage"],
+  });
+}
+
 async function reopenCurrentConnectionWindow(): Promise<boolean> {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (!mainWindow.isVisible()) {
@@ -712,6 +723,10 @@ async function reopenCurrentConnectionWindow(): Promise<boolean> {
         ? path.join(__dirname, "preload.js")
         : undefined,
   });
+
+  if (currentConnection.mode === "local_embedded") {
+    await resetLocalEmbeddedUiSession(currentConnection.allowedOrigin, window.webContents.session);
+  }
 
   await window.loadURL(currentConnection.startUrl);
   await replaceMainWindow(window);
@@ -868,6 +883,7 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
       preloadPath: path.join(__dirname, "preload.js"),
     });
 
+    await resetLocalEmbeddedUiSession(new URL(startUrl).origin, window.webContents.session);
     await window.loadURL(startUrl);
     if (bootId !== bootSequence) {
       window.destroy();
@@ -1163,6 +1179,15 @@ function registerLauncherIpc(): void {
     const bounds = launcherWindow.getBounds();
     const maxHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
     const newHeight = Math.max(400, Math.min(height, maxHeight));
+
+    if (!launcherWindow.isVisible()) {
+      // First measurement: set size instantly and show without animation
+      launcherWindow.setBounds({ ...bounds, height: newHeight });
+      launcherWindow.show();
+      launcherWindow.focus();
+      return;
+    }
+
     if (Math.abs(bounds.height - newHeight) > 2) {
       animateLauncherHeight(bounds, newHeight);
     }
