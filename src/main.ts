@@ -459,22 +459,13 @@ function getAttachedLauncherDimensions(): {
     ? screen.getDisplayMatching(parentBounds)
     : screen.getPrimaryDisplay();
   const workArea = display.workArea;
-  const referenceWidth = parentBounds?.width ?? workArea.width;
-  const referenceHeight = parentBounds?.height ?? workArea.height;
-
-  const width = Math.max(
-    560,
-    Math.min(620, workArea.width - 96, Math.round(referenceWidth * 0.44)),
-  );
-  const height = Math.max(
-    500,
-    Math.min(620, workArea.height - 96, Math.round(referenceHeight * 0.55)),
-  );
+  const width = Math.max(480, Math.min(560, workArea.width - 96));
+  const height = Math.max(500, Math.min(620, workArea.height - 96));
 
   return {
     width,
     height,
-    minWidth: 560,
+    minWidth: width,
     minHeight: 400,
   };
 }
@@ -533,7 +524,7 @@ async function ensureLauncherWindow(view: LauncherView, payload?: object): Promi
     launcher = launcherWindow!;
   }
 
-  if (!launcher.isVisible() && !mustRecreate) {
+  if (!launcher.isVisible() && (!mustRecreate || presentation === "standalone")) {
     launcher.show();
   }
   if (launcher.isVisible()) {
