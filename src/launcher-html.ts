@@ -640,6 +640,7 @@ export function getLauncherHtml(): string {
   }
   .tab-conn-dot.healthy { background: #4ade80; }
   .tab-conn-dot.auth-required { background: #fbbf24; }
+  .tab-conn-dot.unsupported { background: #fb7185; }
   .tab-conn-dot.unreachable { background: #f87171; }
   .tab-conn-dot.unknown { background: #3f3f46; }
   .tab-conn-edit {
@@ -829,9 +830,9 @@ export function getLauncherHtml(): string {
 const launcher = window.paperclipLauncher;
 let selectedCard = "local";
 let editingId = null;
+let modalReturnView = "saved";
 let lastVerification = null;
 let lastErrorAction = null;
-let lastRemoteLoop = null;
 let pendingDeleteId = null;
 let deleteTriggerEl = null;
 let snapshot = null;
@@ -961,13 +962,6 @@ function openAddRemoteFromChooser() {
   launcher.setChooserMode("remote_existing");
   showView("remote-form");
 }
-
-async function openSavedConnections() {
-  const nextSnapshot = await launcher.openSavedConnections();
-  applySnapshot(nextSnapshot);
-  showView("saved");
-}
-
 
 function resetVerificationUi() {
   document.getElementById("urlError").style.display = "none";
@@ -1209,6 +1203,7 @@ function renderConnections() {
 }
 
 function openAddModal() {
+  modalReturnView = "saved";
   editingId = null;
   document.getElementById("modalTitle").textContent = "Add Connection";
   document.getElementById("modalName").value = "";
@@ -1223,6 +1218,8 @@ function openEditModal(profileId) {
     return;
   }
 
+  const activeView = (document.querySelector(".view.active") || {}).id?.replace("view-", "");
+  modalReturnView = activeView === "chooser" && selectedCard === "remote" ? "chooser-remote" : "saved";
   editingId = profileId;
   document.getElementById("modalTitle").textContent = "Edit Connection";
   document.getElementById("modalName").value = profile.name;
@@ -1234,6 +1231,15 @@ function openEditModal(profileId) {
 function closeModal() {
   editingId = null;
   document.getElementById("editModal").classList.remove("active");
+}
+
+function restoreModalReturnView() {
+  if (modalReturnView === "chooser-remote") {
+    showChooserRemoteTab();
+    return;
+  }
+
+  showView("saved");
 }
 
 async function saveModal() {
@@ -1248,7 +1254,7 @@ async function saveModal() {
     });
     applySnapshot(nextSnapshot);
     closeModal();
-    showView("saved");
+    restoreModalReturnView();
   } catch (error) {
     document.getElementById("modalError").textContent = error && error.message ? error.message : "Enter a valid http(s) URL.";
     document.getElementById("modalError").style.display = "block";

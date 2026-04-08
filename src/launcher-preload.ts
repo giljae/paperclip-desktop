@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
     rememberChoice: boolean;
   }) => ipcRenderer.invoke("launcher:connect-remote", payload),
   connectSavedProfile: (profileId: string) => ipcRenderer.invoke("launcher:connect-saved-profile", profileId),
-  openSavedConnections: () => ipcRenderer.invoke("launcher:open-saved-connections"),
   openCurrentRemote: () => ipcRenderer.invoke("launcher:open-current-remote"),
   returnToCurrentSession: () => ipcRenderer.invoke("launcher:return-to-current-session"),
   closeSheet: () => ipcRenderer.invoke("launcher:close-sheet"),

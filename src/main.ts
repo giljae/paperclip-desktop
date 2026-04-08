@@ -1136,11 +1136,6 @@ function registerLauncherIpc(): void {
     return { started: true };
   });
 
-  ipcMain.handle("launcher:open-saved-connections", async () => {
-    await ensureLauncherWindow("saved");
-    return buildLauncherSnapshot();
-  });
-
   ipcMain.handle("launcher:open-current-remote", async () => {
     const opened = await reopenCurrentConnectionWindow();
     return { opened };
