@@ -25,29 +25,23 @@ function okResult(overrides = {}) {
   };
 }
 
-test("remote loop prefers bootstrap-pending over signed-out", () => {
+test("remote loop is disabled for bootstrap-pending remotes", () => {
   const result = okResult({
     bootstrapStatus: "bootstrap_pending",
     sessionState: "signed_out",
   });
 
-  assert.equal(getRemoteLoopState(result), "bootstrap_pending");
-
-  const payload = buildRemoteLoopPayload(result);
-  assert.equal(payload?.state, "bootstrap_pending");
-  assert.equal(payload?.primaryActionLabel, "Open Setup in Browser");
+  assert.equal(getRemoteLoopState(result), null);
+  assert.equal(buildRemoteLoopPayload(result), null);
 });
 
-test("remote loop shows sign-in-required for verified signed-out remotes", () => {
+test("remote loop is disabled for verified signed-out remotes", () => {
   const result = okResult({
     sessionState: "signed_out",
   });
 
-  assert.equal(getRemoteLoopState(result), "signin_required");
-
-  const payload = buildRemoteLoopPayload(result);
-  assert.equal(payload?.state, "signin_required");
-  assert.equal(payload?.primaryActionLabel, "Open Sign-In in Browser");
+  assert.equal(getRemoteLoopState(result), null);
+  assert.equal(buildRemoteLoopPayload(result), null);
 });
 
 test("remote loop is disabled for ready signed-in remotes", () => {

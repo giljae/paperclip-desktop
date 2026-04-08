@@ -998,10 +998,6 @@ async function continueToSignIn() {
     saveProfile: false,
     rememberChoice,
   });
-
-  if (needsBrowserStep(lastVerification)) {
-    await launcher.openRemoteInBrowser(lastVerification.normalizedUrl);
-  }
 }
 
 async function connectAndSave() {
@@ -1111,10 +1107,6 @@ function showRemoteConnectingState(result) {
         : "Opening verified remote...";
   document.getElementById("connectingUrl").textContent = result.normalizedUrl || document.getElementById("remoteUrl").value.trim();
   showView("connecting");
-}
-
-function needsBrowserStep(result) {
-  return result && (result.bootstrapStatus === "bootstrap_pending" || result.sessionState === "signed_out");
 }
 
 function updateWindowClose(viewName) {
@@ -1349,11 +1341,11 @@ function mapVerificationResult(result) {
       badge: "Verified remote - setup required",
       title: "Instance setup required",
       detail: mergeDetail(
-        "The host is a verified authenticated Paperclip remote, but no instance admin exists yet. Open the remote setup flow instead of entering credentials in Desktop.",
+        "The host is a verified authenticated Paperclip remote, but no instance admin exists yet. Connect Remote to continue through Paperclip's setup flow in-app.",
         result.warning,
       ),
       meta: buildResultMeta(result),
-      actionLabel: "Open Setup in Browser",
+      actionLabel: "Connect Remote",
       saveLabel: "Save Connection",
     };
   }
@@ -1381,11 +1373,11 @@ function mapVerificationResult(result) {
       badge: "Verified remote - sign-in required",
       title: "Verified remote, no active session",
       detail: mergeDetail(
-        "The host looks like an authenticated Paperclip instance. Continue to the remote sign-in flow instead of entering credentials in Desktop.",
+        "The host looks like an authenticated Paperclip instance. Connect Remote to continue through Paperclip's sign-in flow in-app.",
         result.warning,
       ),
       meta: buildResultMeta(result),
-      actionLabel: "Open Sign-In in Browser",
+      actionLabel: "Connect Remote",
       saveLabel: "Save Connection",
     };
   }

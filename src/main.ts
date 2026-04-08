@@ -17,7 +17,6 @@ import treeKill from "tree-kill";
 import { initAutoUpdater } from "./updater";
 import { getLauncherHtml } from "./launcher-html";
 import { preflightRemoteConnection } from "./connection/preflight";
-import { buildRemoteLoopPayload, getRemoteLoopState } from "./connection/remote-loop";
 import { ConnectionStore, getConnectionsFilePath } from "./connection/profiles";
 import { normalizeRemoteUrl } from "./connection/validate";
 import {
@@ -893,7 +892,6 @@ async function bootRemote(options: {
     });
   }
 
-  const remoteLoopPayload = buildRemoteLoopPayload(result);
   if (savedProfile) {
     connectionStore.recordRemoteHealth(savedProfile.id, result);
   }
@@ -901,12 +899,6 @@ async function bootRemote(options: {
     connectionStore.setRememberedProfile(savedProfile?.id ?? null, options.rememberChoice === true);
   }
   sendLauncherState();
-
-  if (remoteLoopPayload) {
-    currentConnection = null;
-    await ensureLauncherWindow("remote-loop", remoteLoopPayload);
-    return;
-  }
 
   const partition = remotePartitionKey(savedProfile?.id ?? null, result.origin);
   const window = createMainWindow({
@@ -916,10 +908,9 @@ async function bootRemote(options: {
     partition,
   });
 
-  const remoteLoopState = getRemoteLoopState(result);
-  const label = remoteLoopState === "bootstrap_pending"
+  const label = result.bootstrapStatus === "bootstrap_pending"
     ? "Opening remote setup..."
-    : remoteLoopState === "signin_required"
+    : result.sessionState === "signed_out"
       ? "Opening remote sign-in..."
       : "Opening verified remote...";
   sendLauncherNavigation("connecting", {
