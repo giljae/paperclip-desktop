@@ -409,17 +409,16 @@ function closeLauncherWindow(): void {
 
 let launcherResizeTimer: ReturnType<typeof setTimeout> | null = null;
 
-function animateLauncherHeight(
-  bounds: { x: number; y: number; width: number; height: number },
-  targetHeight: number,
+function animateLauncherContentHeight(
+  startContentHeight: number,
+  targetContentHeight: number,
 ): void {
   if (launcherResizeTimer) {
     clearInterval(launcherResizeTimer);
     launcherResizeTimer = null;
   }
 
-  const startHeight = bounds.height;
-  const delta = targetHeight - startHeight;
+  const delta = targetContentHeight - startContentHeight;
   if (Math.abs(delta) < 3) return;
 
   const durationMs = 180;
@@ -438,8 +437,9 @@ function animateLauncherHeight(
     const t = Math.min(step / steps, 1);
     // ease-out cubic
     const eased = 1 - Math.pow(1 - t, 3);
-    const h = Math.round(startHeight + delta * eased);
-    launcherWindow.setBounds({ ...bounds, height: h });
+    const h = Math.round(startContentHeight + delta * eased);
+    const [w] = launcherWindow.getContentSize();
+    launcherWindow.setContentSize(w, h);
 
     if (t >= 1) {
       if (launcherResizeTimer) clearInterval(launcherResizeTimer);
@@ -1166,18 +1166,20 @@ function registerLauncherIpc(): void {
   ipcMain.handle("launcher:report-content-height", async (_event, height: number) => {
     if (!launcherWindow || launcherWindow.isDestroyed()) return;
     const bounds = launcherWindow.getBounds();
-    const maxHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
-    const newHeight = Math.max(400, Math.min(height, maxHeight));
+    const maxContentHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
+    const newContentHeight = Math.max(400, Math.min(height, maxContentHeight));
+    const [, currentContentHeight] = launcherWindow.getContentSize();
 
     if (!launcherWindow.isVisible()) {
-      launcherWindow.setBounds({ ...bounds, height: newHeight });
+      const [w] = launcherWindow.getContentSize();
+      launcherWindow.setContentSize(w, newContentHeight);
       launcherWindow.show();
       launcherWindow.focus();
       return;
     }
 
-    if (Math.abs(bounds.height - newHeight) > 2) {
-      animateLauncherHeight(bounds, newHeight);
+    if (Math.abs(currentContentHeight - newContentHeight) > 2) {
+      animateLauncherContentHeight(currentContentHeight, newContentHeight);
     }
   });
 

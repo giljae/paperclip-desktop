@@ -1593,7 +1593,8 @@ function measureLauncherHeight(windowEl) {
   const styles = window.getComputedStyle(document.body);
   const verticalPadding = Number.parseFloat(styles.paddingTop || "0")
     + Number.parseFloat(styles.paddingBottom || "0");
-  return windowEl.getBoundingClientRect().height + verticalPadding;
+  // Extra pixels compensate for macOS sheet frame chrome / rounded-corner insets
+  return windowEl.getBoundingClientRect().height + verticalPadding + 8;
 }
 
 function installContentResizeReporting() {
@@ -1615,6 +1616,8 @@ function installContentResizeReporting() {
 
   new ResizeObserver(report).observe(windowEl);
   report();
+  // Re-measure after layout settles to catch late shifts on first open
+  requestAnimationFrame(() => requestAnimationFrame(report));
 }
 
 window.paperclipLauncher.onStateChanged((nextSnapshot) => {
