@@ -836,6 +836,7 @@ let lastErrorAction = null;
 let pendingDeleteId = null;
 let deleteTriggerEl = null;
 let snapshot = null;
+let requestContentHeightReport = () => {};
 
 const stepElements = {
   init: document.getElementById("step-init"),
@@ -868,6 +869,7 @@ function showView(name) {
   }
   updateWindowClose(name);
   focusFirstInteractive(name);
+  requestContentHeightReport();
 }
 
 function focusFirstInteractive(viewName) {
@@ -909,6 +911,7 @@ function switchTab(tab) {
   if (tab === "remote") {
     renderTabRemoteList();
   }
+  requestContentHeightReport();
 }
 
 function renderChooser() {
@@ -1614,14 +1617,41 @@ function installContentResizeReporting() {
     launcher.reportContentHeight(height);
   };
 
+  let settleFrameId = 0;
+  let settleTimeoutIds = [];
+  const scheduleReport = () => {
+    report();
+
+    if (settleFrameId) {
+      cancelAnimationFrame(settleFrameId);
+    }
+    settleTimeoutIds.forEach((timeoutId) => clearTimeout(timeoutId));
+    settleTimeoutIds = [];
+
+    settleFrameId = requestAnimationFrame(() => {
+      settleFrameId = requestAnimationFrame(() => {
+        settleFrameId = 0;
+        report();
+      });
+    });
+    settleTimeoutIds = [
+      window.setTimeout(report, 80),
+      window.setTimeout(report, 220),
+    ];
+  };
+
+  requestContentHeightReport = scheduleReport;
   new ResizeObserver(report).observe(windowEl);
-  report();
-  // Re-measure after layout settles to catch late shifts on first open
-  requestAnimationFrame(() => requestAnimationFrame(report));
+  scheduleReport();
+  window.addEventListener("load", scheduleReport, { once: true });
 }
 
 window.paperclipLauncher.onStateChanged((nextSnapshot) => {
   applySnapshot(nextSnapshot);
+});
+
+window.paperclipLauncher.onRequestContentHeightSync(() => {
+  requestContentHeightReport();
 });
 
 window.paperclipLauncher.onNavigate((payload) => {

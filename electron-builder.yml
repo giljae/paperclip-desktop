@@ -33,6 +33,18 @@ extraResources:
     to: app-server/server/node_modules
     filter:
       - "**/*"
+  - from: build/server-bundle/${os}-${arch}/server/node_modules/@aws-sdk
+    to: app-server/server/node_modules/@aws-sdk
+    filter:
+      - "**/*"
+  - from: build/server-bundle/${os}-${arch}/server/node_modules/@aws-crypto
+    to: app-server/server/node_modules/@aws-crypto
+    filter:
+      - "**/*"
+  - from: build/server-bundle/${os}-${arch}/server/node_modules/@aws
+    to: app-server/server/node_modules/@aws
+    filter:
+      - "**/*"
   - from: build/server-bundle/${os}-${arch}/server/package.json
     to: app-server/server/package.json
   # Bundled Node.js binary (arch-specific, selected at build time)

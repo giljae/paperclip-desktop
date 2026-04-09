@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
   onStateChanged: (callback: (snapshot: unknown) => void) => {
     ipcRenderer.on("launcher:state-changed", (_event, snapshot) => callback(snapshot));
   },
+  onRequestContentHeightSync: (callback: () => void) => {
+    ipcRenderer.on("launcher:request-content-height-sync", () => callback());
+  },
   onNavigate: (callback: (payload: unknown) => void) => {
     ipcRenderer.on("launcher:navigate", (_event, payload) => callback(payload));
   },

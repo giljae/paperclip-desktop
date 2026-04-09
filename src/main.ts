@@ -401,6 +401,8 @@ function desiredLauncherPresentation(): LauncherPresentation {
 }
 
 function closeLauncherWindow(): void {
+  launcherContentHeightSettleTimers.forEach((timer) => clearTimeout(timer));
+  launcherContentHeightSettleTimers = [];
   if (launcherWindow && !launcherWindow.isDestroyed()) {
     launcherWindow.close();
   }
@@ -408,6 +410,8 @@ function closeLauncherWindow(): void {
 }
 
 let launcherResizeTimer: ReturnType<typeof setTimeout> | null = null;
+let launcherContentHeightSettleTimers: ReturnType<typeof setTimeout>[] = [];
+let lastRequestedLauncherContentHeight = 0;
 
 function animateLauncherContentHeight(
   startContentHeight: number,
@@ -446,6 +450,43 @@ function animateLauncherContentHeight(
       launcherResizeTimer = null;
     }
   }, stepMs);
+}
+
+function requestLauncherContentHeightSync(): void {
+  if (!launcherWindow || launcherWindow.isDestroyed()) {
+    return;
+  }
+
+  launcherWindow.webContents.send("launcher:request-content-height-sync");
+  const timer = setTimeout(() => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) {
+      return;
+    }
+    launcherWindow.webContents.send("launcher:request-content-height-sync");
+  }, 80);
+  launcherContentHeightSettleTimers.push(timer);
+}
+
+function settleLauncherContentHeight(targetContentHeight: number): void {
+  if (!launcherWindow || launcherWindow.isDestroyed()) {
+    return;
+  }
+
+  launcherContentHeightSettleTimers.forEach((timer) => clearTimeout(timer));
+  const settleDelaysMs = [0, 80, 180, 320];
+  launcherContentHeightSettleTimers = settleDelaysMs.map((delayMs) => setTimeout(() => {
+    if (!launcherWindow || launcherWindow.isDestroyed() || !launcherWindow.isVisible()) {
+      return;
+    }
+
+    const [, currentContentHeight] = launcherWindow.getContentSize();
+    if (Math.abs(currentContentHeight - targetContentHeight) <= 2) {
+      return;
+    }
+
+    animateLauncherContentHeight(currentContentHeight, targetContentHeight);
+    launcherWindow.webContents.send("launcher:request-content-height-sync");
+  }, delayMs));
 }
 
 function getAttachedLauncherDimensions(): {
@@ -1168,6 +1209,7 @@ function registerLauncherIpc(): void {
     const bounds = launcherWindow.getBounds();
     const maxContentHeight = screen.getDisplayMatching(bounds).workArea.height - 96;
     const newContentHeight = Math.max(400, Math.min(height, maxContentHeight));
+    lastRequestedLauncherContentHeight = newContentHeight;
     const [, currentContentHeight] = launcherWindow.getContentSize();
 
     if (!launcherWindow.isVisible()) {
@@ -1175,12 +1217,15 @@ function registerLauncherIpc(): void {
       launcherWindow.setContentSize(w, newContentHeight);
       launcherWindow.show();
       launcherWindow.focus();
+      requestLauncherContentHeightSync();
+      settleLauncherContentHeight(newContentHeight);
       return;
     }
 
     if (Math.abs(currentContentHeight - newContentHeight) > 2) {
       animateLauncherContentHeight(currentContentHeight, newContentHeight);
     }
+    settleLauncherContentHeight(lastRequestedLauncherContentHeight);
   });
 
   ipcMain.handle("launcher:show-chooser", async () => {
