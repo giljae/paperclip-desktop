@@ -695,6 +695,10 @@ export function getLauncherHtml(): string {
       <div class="btn-row" style="gap:8px;">
         <button class="btn" onclick="openAddRemoteFromChooser()">+ Add Remote Connection</button>
       </div>
+      <div class="remember-row" style="margin-top:16px;margin-bottom:0;">
+        <input type="checkbox" id="rememberRemoteChooser">
+        <label for="rememberRemoteChooser">Reconnect to the selected remote on launch</label>
+      </div>
     </div>
   </div>
 
@@ -712,6 +716,11 @@ export function getLauncherHtml(): string {
     <div class="form-group">
       <label for="displayName">Display name <span style="color:#3f3f46">(optional)</span></label>
       <input type="text" id="displayName" placeholder="e.g. Home Server">
+    </div>
+
+    <div class="remember-row" style="margin-top:4px;">
+      <input type="checkbox" id="rememberRemoteForm">
+      <label for="rememberRemoteForm">Reconnect to this remote on launch</label>
     </div>
 
     <div id="testStatus" style="min-height: 24px;"></div>
@@ -845,6 +854,20 @@ const stepElements = {
   ready: document.getElementById("step-ready"),
 };
 const stepOrder = ["init", "database", "server", "ready"];
+
+function getRemoteRememberChoice() {
+  return !!(
+    document.getElementById("rememberRemoteForm")?.checked
+    || document.getElementById("rememberRemoteChooser")?.checked
+  );
+}
+
+function setRemoteRememberChoice(checked) {
+  const chooser = document.getElementById("rememberRemoteChooser");
+  const form = document.getElementById("rememberRemoteForm");
+  if (chooser) chooser.checked = !!checked;
+  if (form) form.checked = !!checked;
+}
 
 function showView(name) {
   document.querySelectorAll(".view").forEach((view) => {
@@ -1041,7 +1064,7 @@ async function continueToSignIn() {
     return;
   }
 
-  const rememberChoice = false;
+  const rememberChoice = getRemoteRememberChoice();
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   const displayName = document.getElementById("displayName").value.trim();
   lastErrorAction = {
@@ -1067,7 +1090,7 @@ async function connectAndSave() {
     return;
   }
 
-  const rememberChoice = false;
+  const rememberChoice = getRemoteRememberChoice();
   const remoteUrl = document.getElementById("remoteUrl").value.trim();
   const displayName = document.getElementById("displayName").value.trim();
   lastErrorAction = {
@@ -1318,23 +1341,24 @@ async function quickConnect(profileId) {
     lastErrorAction = { type: "local", rememberChoice: false };
     resetLocalBoot();
     showView("local-boot");
-    await launcher.connectSavedProfile(profileId);
+    await launcher.connectSavedProfile({ profileId, rememberChoice: false });
     return;
   }
 
+  const rememberChoice = getRemoteRememberChoice();
   document.getElementById("remoteUrl").value = profile.remoteUrl || "";
   document.getElementById("displayName").value = profile.name;
   lastErrorAction = {
     type: "remote",
     saveProfile: false,
-    rememberChoice: false,
+    rememberChoice,
     remoteUrl: profile.remoteUrl,
     displayName: profile.name,
   };
   document.getElementById("connectingLabel").textContent = "Opening verified remote...";
   document.getElementById("connectingUrl").textContent = profile.remoteUrl || "";
   showView("connecting");
-  await launcher.connectSavedProfile(profileId);
+  await launcher.connectSavedProfile({ profileId, rememberChoice });
 }
 
 function resetLocalBoot() {
@@ -1568,6 +1592,12 @@ function applySnapshot(nextSnapshot) {
   if (activeView === "chooser" || !activeView) {
     switchTab(nextSnapshot.state.chooserMode === "remote_existing" ? "remote" : "local");
   }
+  setRemoteRememberChoice(
+    !nextSnapshot.state.alwaysShowChooser
+    && nextSnapshot.state.autoConnectLastProfile
+    && nextSnapshot.state.activeProfileId
+    && nextSnapshot.state.activeProfileId !== "local_embedded",
+  );
   document.getElementById("rememberLocal").checked =
     !nextSnapshot.state.alwaysShowChooser && nextSnapshot.state.autoConnectLastProfile
     && nextSnapshot.state.chooserMode !== "remote_existing";

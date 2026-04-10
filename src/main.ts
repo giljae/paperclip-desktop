@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   screen,
+  session,
   shell,
   type MenuItemConstructorOptions,
   type Session,
@@ -23,6 +24,7 @@ import {
   shouldRestorePreviousTrackedServer,
   shouldStopAttemptedServer,
 } from "./connection/local-server-lifecycle";
+import { probeLocalServerHealth } from "./connection/local-server-health";
 import { preflightRemoteConnection } from "./connection/preflight";
 import { ConnectionStore, getConnectionsFilePath } from "./connection/profiles";
 import { normalizeRemoteUrl } from "./connection/validate";
@@ -46,6 +48,8 @@ const PREFERRED_PORT = 3100;
 const SERVER_STARTUP_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 400;
 const PID_FILE_NAME = "paperclip-electron.pid";
+const LOCAL_SERVER_HEALTH_POLL_INTERVAL_MS = 30_000;
+const LOCAL_SERVER_HEALTH_TIMEOUT_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Process-global state
@@ -59,6 +63,9 @@ let launcherPresentation: LauncherPresentation = "standalone";
 let isQuitting = false;
 let bootSequence = 0;
 let launcherView: LauncherView = "chooser";
+let localServerMonitorTimer: ReturnType<typeof setInterval> | null = null;
+let localServerHealthCheckInFlight = false;
+let localServerFailureDialogOpen = false;
 let currentConnection: {
   mode: ConnectionMode;
   profileId: string | null;
@@ -353,6 +360,7 @@ function startServer(port: number): ChildProcess {
 }
 
 function killServer(): Promise<void> {
+  stopLocalServerMonitor();
   return new Promise((resolve) => {
     if (!serverProcess?.pid) {
       cleanupPidFile();
@@ -390,6 +398,91 @@ function trackServerProcess(processToTrack: ChildProcess | null): void {
     return;
   }
   cleanupPidFile();
+}
+
+function stopLocalServerMonitor(): void {
+  if (localServerMonitorTimer) {
+    clearInterval(localServerMonitorTimer);
+    localServerMonitorTimer = null;
+  }
+  localServerHealthCheckInFlight = false;
+}
+
+function startLocalServerMonitor(origin: string): void {
+  stopLocalServerMonitor();
+
+  const checkHealth = async () => {
+    if (localServerHealthCheckInFlight || isQuitting) {
+      return;
+    }
+
+    if (currentConnection?.mode !== "local_embedded" || currentConnection.allowedOrigin !== origin) {
+      return;
+    }
+
+    localServerHealthCheckInFlight = true;
+    try {
+      const result = await probeLocalServerHealth({
+        origin,
+        timeoutMs: LOCAL_SERVER_HEALTH_TIMEOUT_MS,
+      });
+      if (!result.ok) {
+        await promptToRecoverLocalServer({
+          message: "The embedded Paperclip server is no longer responding.",
+          detail: result.detail ?? "Local server health checks are failing.",
+        });
+      }
+    } finally {
+      localServerHealthCheckInFlight = false;
+    }
+  };
+
+  void checkHealth();
+  localServerMonitorTimer = setInterval(() => {
+    void checkHealth();
+  }, LOCAL_SERVER_HEALTH_POLL_INTERVAL_MS);
+}
+
+async function promptToRecoverLocalServer(input: {
+  message: string;
+  detail: string;
+}): Promise<void> {
+  if (isQuitting || localServerFailureDialogOpen || currentConnection?.mode !== "local_embedded") {
+    return;
+  }
+
+  stopLocalServerMonitor();
+  localServerFailureDialogOpen = true;
+
+  const parentWindow = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : undefined;
+  const messageBoxOptions = {
+    type: "error" as const,
+    title: "Local Paperclip Unavailable",
+    message: input.message,
+    detail: `${input.detail}\n\nRestart the local server to continue.`,
+    buttons: ["Restart Local", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  };
+
+  try {
+    const { response } = parentWindow
+      ? await dialog.showMessageBox(parentWindow, messageBoxOptions)
+      : await dialog.showMessageBox(messageBoxOptions);
+
+    if (response === 0) {
+      await ensureLauncherWindow("local-boot");
+      void bootLocal({ forceRestart: true });
+      return;
+    }
+
+    app.quit();
+  } finally {
+    localServerFailureDialogOpen = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -779,10 +872,15 @@ function remotePartitionKey(profileId: string | null, origin: string): string {
 // Connection boot flows
 // ---------------------------------------------------------------------------
 
-async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberChoice?: boolean } = {}): Promise<void> {
+async function bootLocal(options: {
+  rememberChoiceExplicit?: boolean;
+  rememberChoice?: boolean;
+  forceRestart?: boolean;
+} = {}): Promise<void> {
   const bootId = ++bootSequence;
+  stopLocalServerMonitor();
 
-  if (currentConnection?.mode === "local_embedded" && mainWindow && !mainWindow.isDestroyed()) {
+  if (!options.forceRestart && currentConnection?.mode === "local_embedded" && mainWindow && !mainWindow.isDestroyed()) {
     connectionStore.recordConnectionResult(LOCAL_PROFILE_ID);
     if (options.rememberChoiceExplicit) {
       connectionStore.setRememberedProfile(
@@ -859,17 +957,13 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
       }
 
       trackServerProcess(null);
+      stopLocalServerMonitor();
       const tail = serverOutputLines.slice(-30).join("\n");
       console.error(`Server exited unexpectedly (code=${code}, signal=${signal})\n${tail}`);
-      void dialog
-        .showMessageBox({
-          type: "error",
-          title: "Server Error",
-          message: "The Paperclip server stopped unexpectedly.",
-          detail: `Exit code: ${code}, signal: ${signal}\n\nLog: ${logFile}\n\n${tail}`,
-          buttons: ["Quit"],
-        })
-        .then(() => app.quit());
+      void promptToRecoverLocalServer({
+        message: "The embedded Paperclip server stopped unexpectedly.",
+        detail: `Exit code: ${code}, signal: ${signal}\n\nLog: ${logFile}\n\n${tail}`,
+      });
     });
 
     const progressInterval = setInterval(() => {
@@ -949,6 +1043,7 @@ async function bootLocal(options: { rememberChoiceExplicit?: boolean; rememberCh
     sendLauncherState();
 
     sendBootStatus("ready", "Ready!", 100);
+    startLocalServerMonitor(new URL(startUrl).origin);
     closeLauncherWindow();
     initAutoUpdater(window);
   } catch (error) {
@@ -997,9 +1092,17 @@ async function bootRemote(options: {
     url: normalized.normalizedUrl,
   });
 
+  const preflightPartition = remotePartitionKey(options.profileId ?? null, normalized.origin);
+  const preflightSession = session.fromPartition(preflightPartition);
+  const partitionFetch: typeof fetch = (input, init) =>
+    preflightSession.fetch(
+      input instanceof URL ? input.toString() : input,
+      init,
+    ) as Promise<Response>;
   const result = await preflightRemoteConnection({
     remoteUrl: normalized.normalizedUrl,
     localServerVersion: resolveLocalServerVersion(),
+    fetchImpl: partitionFetch,
   });
 
   if (bootId !== bootSequence) {
@@ -1039,7 +1142,7 @@ async function bootRemote(options: {
   }
   sendLauncherState();
 
-  const partition = remotePartitionKey(savedProfile?.id ?? null, result.origin);
+  const partition = remotePartitionKey(savedProfile?.id ?? options.profileId ?? null, result.origin);
   const window = createMainWindow({
     mode: "remote_existing",
     startUrl: result.normalizedUrl,
@@ -1089,9 +1192,12 @@ async function bootRemote(options: {
   }
 }
 
-async function bootSavedProfile(profileId: string): Promise<void> {
+async function bootSavedProfile(
+  profileId: string,
+  options: { rememberChoiceExplicit?: boolean; rememberChoice?: boolean } = {},
+): Promise<void> {
   if (profileId === LOCAL_PROFILE_ID) {
-    await bootLocal();
+    await bootLocal(options);
     return;
   }
 
@@ -1105,6 +1211,8 @@ async function bootSavedProfile(profileId: string): Promise<void> {
     remoteUrl: profile.remoteUrl,
     displayName: profile.name,
     saveProfile: false,
+    rememberChoiceExplicit: options.rememberChoiceExplicit,
+    rememberChoice: options.rememberChoice,
   });
 }
 
@@ -1177,10 +1285,16 @@ function registerLauncherIpc(): void {
     },
   );
 
-  ipcMain.handle("launcher:connect-saved-profile", async (_event, profileId: string) => {
-    void bootSavedProfile(profileId);
-    return { started: true };
-  });
+  ipcMain.handle(
+    "launcher:connect-saved-profile",
+    async (_event, payload: { profileId: string; rememberChoice: boolean }) => {
+      void bootSavedProfile(payload.profileId, {
+        rememberChoiceExplicit: true,
+        rememberChoice: payload.rememberChoice,
+      });
+      return { started: true };
+    },
+  );
 
   ipcMain.handle("launcher:open-current-remote", async () => {
     const opened = await reopenCurrentConnectionWindow();
@@ -1423,6 +1537,7 @@ app.on("before-quit", async (event) => {
     return;
   }
 
+  stopLocalServerMonitor();
   if (!serverProcess) {
     return;
   }
