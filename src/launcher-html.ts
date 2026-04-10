@@ -708,8 +708,8 @@ export function getLauncherHtml(): string {
     <div class="form-group">
       <label for="remoteUrl">Remote URL</label>
       <input type="text" id="remoteUrl" placeholder="https://paperclip.example.com">
-      <div class="field-hint">Desktop verifies /api/health and auth readiness before loading a remote origin.</div>
-      <div class="field-error" id="urlError">Enter a valid http(s) URL.</div>
+      <div class="field-hint">Desktop requires HTTPS and verifies /api/health and auth readiness before loading a remote origin.</div>
+      <div class="field-error" id="urlError">Enter a valid HTTPS URL.</div>
       <div class="field-success" id="urlSuccess">Verified authenticated Paperclip remote detected.</div>
     </div>
 
@@ -812,7 +812,7 @@ export function getLauncherHtml(): string {
       <label for="modalUrl">URL</label>
       <input type="text" id="modalUrl" placeholder="https://paperclip.example.com">
       <div class="field-hint">Remote profiles are verified before use and never store raw passwords.</div>
-      <div class="field-error" id="modalError">Enter a valid http(s) URL.</div>
+      <div class="field-error" id="modalError">Enter a valid HTTPS URL.</div>
     </div>
 
     <div class="form-actions">
@@ -1031,7 +1031,7 @@ async function verifyRemote() {
   resetVerificationUi();
 
   if (!remoteUrl) {
-    document.getElementById("urlError").textContent = "Enter a valid http(s) URL.";
+    document.getElementById("urlError").textContent = "Enter a valid HTTPS URL.";
     document.getElementById("urlError").style.display = "block";
     return;
   }
@@ -1047,7 +1047,7 @@ async function verifyRemote() {
 
     if (result.reason === "invalid_url") {
       document.getElementById("testStatus").innerHTML = "";
-      document.getElementById("urlError").textContent = result.detail || "Enter a valid http(s) URL.";
+      document.getElementById("urlError").textContent = result.detail || "Enter a valid HTTPS URL.";
       document.getElementById("urlError").style.display = "block";
       return;
     }
@@ -1286,7 +1286,7 @@ async function saveModal() {
     closeModal();
     restoreModalReturnView();
   } catch (error) {
-    document.getElementById("modalError").textContent = error && error.message ? error.message : "Enter a valid http(s) URL.";
+    document.getElementById("modalError").textContent = error && error.message ? error.message : "Enter a valid HTTPS URL.";
     document.getElementById("modalError").style.display = "block";
   }
 }
@@ -1542,15 +1542,12 @@ function mapVerificationResult(result) {
     };
   }
 
-  const unreachableDetail = result.normalizedUrl && result.normalizedUrl.startsWith("http:")
-    ? detail + " If this server redirects HTTP to HTTPS, try entering the HTTPS URL directly."
-    : detail;
   return {
     success: false,
     badgeClass: "unreachable",
     badge: "Host unreachable",
     title: "Could not verify remote",
-    detail: unreachableDetail,
+    detail,
     meta: buildResultMeta(result),
     actionLabel: "Continue to Sign-In",
     saveLabel: "Connect & Save",

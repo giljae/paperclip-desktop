@@ -10,18 +10,18 @@ const PRIVATE_HOST_SUFFIXES = [".internal", ".local", ".lan", ".home", ".ts.net"
 export function normalizeRemoteUrl(input: string): NormalizedRemoteUrl {
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new Error("Enter a valid http(s) URL.");
+    throw new Error("Enter a valid HTTPS URL.");
   }
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error("Enter a valid http(s) URL.");
+    throw new Error("Enter a valid HTTPS URL.");
   }
 
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Enter a valid http(s) URL.");
+  if (parsed.protocol !== "https:") {
+    throw new Error("Remote URLs must use HTTPS.");
   }
 
   if (parsed.username || parsed.password) {
@@ -37,7 +37,6 @@ export function normalizeRemoteUrl(input: string): NormalizedRemoteUrl {
     input: trimmed,
     normalizedUrl,
     origin: parsed.origin,
-    warning: resolveTransportWarning(parsed),
   };
 }
 
@@ -58,19 +57,6 @@ export function isPrivateHostname(hostname: string): boolean {
 
   return false;
 }
-
-function resolveTransportWarning(url: URL): string | undefined {
-  if (url.protocol === "https:") {
-    return undefined;
-  }
-
-  if (isPrivateHostname(url.hostname)) {
-    return undefined;
-  }
-
-  return "This remote is using HTTP. Prefer HTTPS unless you fully trust the network path.";
-}
-
 function isPrivateIpv4(hostname: string): boolean {
   const match = hostname.match(/^(\d{1,3})(?:\.(\d{1,3})){3}$/);
   if (!match) {

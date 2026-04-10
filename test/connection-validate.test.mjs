@@ -12,9 +12,11 @@ test("normalizeRemoteUrl strips path and preserves https origin", () => {
   assert.equal(normalized.warning, undefined);
 });
 
-test("normalizeRemoteUrl warns for public http remotes", () => {
-  const normalized = normalizeRemoteUrl("http://paperclip.example.com");
-  assert.match(normalized.warning, /using HTTP/i);
+test("normalizeRemoteUrl rejects non-https remotes", () => {
+  assert.throws(
+    () => normalizeRemoteUrl("http://paperclip.example.com"),
+    /must use HTTPS/i,
+  );
 });
 
 test("normalizeRemoteUrl rejects embedded credentials", () => {

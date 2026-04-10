@@ -72,7 +72,7 @@ test("preflight treats 401 session probe as sign-in required", async () => {
 
 test("preflight blocks local_trusted remotes", async () => {
   const result = await preflightRemoteConnection({
-    remoteUrl: "http://192.168.1.50:3100",
+    remoteUrl: "https://192.168.1.50:3100",
     fetchImpl: async () =>
       jsonResponse(
         {
@@ -90,6 +90,22 @@ test("preflight blocks local_trusted remotes", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.reason, "unsupported_local_trusted");
+});
+
+test("preflight rejects http remotes before any network call", async () => {
+  let called = false;
+  const result = await preflightRemoteConnection({
+    remoteUrl: "http://paperclip.example.com",
+    fetchImpl: async () => {
+      called = true;
+      return jsonResponse({ status: "ok" }, 200);
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid_url");
+  assert.match(result.detail, /https/i);
+  assert.equal(called, false);
 });
 
 test("preflight rejects non-Paperclip endpoints", async () => {

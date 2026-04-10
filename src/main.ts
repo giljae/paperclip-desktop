@@ -31,6 +31,7 @@ import { normalizeRemoteUrl } from "./connection/validate";
 import {
   isNavigationAllowed,
   localPartition,
+  remotePartitionForProfile,
   shouldOpenExternally,
 } from "./connection/window-policy";
 import { LOCAL_PROFILE_ID } from "./connection/types";
@@ -823,6 +824,13 @@ async function resetLocalEmbeddedUiSession(origin: string, windowSession: Sessio
   });
 }
 
+async function clearRemoteProfileSession(profileId: string): Promise<void> {
+  const remoteSession = session.fromPartition(remotePartitionForProfile(profileId));
+  await remoteSession.clearCache();
+  await remoteSession.clearStorageData();
+  await remoteSession.clearAuthCache();
+}
+
 async function reopenCurrentConnectionWindow(): Promise<boolean> {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (!mainWindow.isVisible()) {
@@ -1081,7 +1089,7 @@ async function bootRemote(options: {
     await ensureLauncherWindow("remote-form");
     sendConnectionError(
       "Invalid remote URL",
-      error instanceof Error ? error.message : "Enter a valid http(s) URL.",
+      error instanceof Error ? error.message : "Enter a valid HTTPS URL.",
     );
     sendLauncherNavigation("error");
     return;
@@ -1244,8 +1252,15 @@ function registerLauncherIpc(): void {
     return buildLauncherSnapshot();
   });
 
-  ipcMain.handle("launcher:delete-profile", (_event, profileId: string) => {
+  ipcMain.handle("launcher:delete-profile", async (_event, profileId: string) => {
+    await clearRemoteProfileSession(profileId);
     connectionStore.deleteRemoteProfile(profileId);
+    if (currentConnection?.mode === "remote_existing" && currentConnection.profileId === profileId) {
+      currentConnection = {
+        ...currentConnection,
+        profileId: null,
+      };
+    }
     sendLauncherState();
     return buildLauncherSnapshot();
   });
