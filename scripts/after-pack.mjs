@@ -146,12 +146,21 @@ export default async function afterPack(context) {
     process.env.CSC_NAME?.trim() ||
     ""
   );
-
-  if (!signingIdentity) {
-    throw new Error("macOS release signing requires APPLE_CODESIGN_IDENTITY or CSC_NAME.");
-  }
+  const allowUnsignedMacBuild = process.env.ALLOW_UNSIGNED_MACOS_BUILD === "true";
 
   stripBundleMetadata(appPath);
+
+  if (!signingIdentity) {
+    if (!allowUnsignedMacBuild) {
+      throw new Error(
+        "macOS release signing requires APPLE_CODESIGN_IDENTITY or CSC_NAME. " +
+        "Set ALLOW_UNSIGNED_MACOS_BUILD=true only for explicit local unsigned builds.",
+      );
+    }
+
+    console.log("[after-pack] Unsigned macOS build explicitly allowed, skipping nested runtime signing.");
+    return;
+  }
 
   if (!existsSync(appServerPath)) {
     console.log("[after-pack] No app-server bundle found, skipping nested runtime signing.");
