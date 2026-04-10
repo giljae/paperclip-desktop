@@ -6,6 +6,8 @@ Paperclip Desktop can already target Windows in Electron Builder, but the reposi
 
 This PRD defines the work required to ship a supported Windows release that users can install, trust, update, and recover from reliably.
 
+For the concrete signing setup tutorial, see `docs/development/windows-signing-guide.md`.
+
 ## Problem
 
 The macOS release path has received most of the repository's release engineering work. Windows currently lacks the same depth of packaging hardening, verification, support documentation, and release operations. Shipping an unsigned or lightly-tested `.exe` would create avoidable trust, support, and update problems.
