@@ -117,3 +117,34 @@ test("prepareMacosReleaseAssets rejects mismatched preserved metadata", () => {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test("prepareMacosReleaseAssets can override stagingPercentage in the merged manifest", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "paperclip-release-assets-test-"));
+  const inputRoot = join(tempRoot, "input");
+  const outputDir = join(tempRoot, "output");
+
+  try {
+    writeArchFixture(inputRoot, "x64", {
+      zipName: "Paperclip Desktop-1.2.3-mac.zip",
+      dmgName: "Paperclip Desktop-1.2.3.dmg",
+      zipSha: "x64zipsha",
+      dmgSha: "x64dmgsha",
+      releaseDate: "2026-04-05T10:00:00.000Z",
+    });
+
+    writeArchFixture(inputRoot, "arm64", {
+      zipName: "Paperclip Desktop-1.2.3-arm64-mac.zip",
+      dmgName: "Paperclip Desktop-1.2.3-arm64.dmg",
+      zipSha: "armzipsha",
+      dmgSha: "armdmgsha",
+      releaseDate: "2026-04-05T11:00:00.000Z",
+    });
+
+    prepareMacosReleaseAssets({ inputRoot, outputDir, stagingPercentage: 10 });
+
+    const manifest = readFileSync(join(outputDir, "latest-mac.yml"), "utf8");
+    assert.match(manifest, /stagingPercentage: 10/);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});

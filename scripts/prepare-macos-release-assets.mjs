@@ -26,6 +26,24 @@ function requireOption(name) {
   return value;
 }
 
+function parseOptionalPercentage(name) {
+  const value = takeOption(name);
+  if (value == null) {
+    return null;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${name} must be an integer between 0 and 100.`);
+  }
+
+  const parsed = Number(value);
+  if (parsed < 0 || parsed > 100) {
+    throw new Error(`${name} must be between 0 and 100.`);
+  }
+
+  return parsed;
+}
+
 function normalizeFileName(name) {
   return name.replace(/[ _]+/g, "-");
 }
@@ -243,7 +261,7 @@ function ensureManifestMetadataParity(manifests) {
   }
 }
 
-export function prepareMacosReleaseAssets({ inputRoot, outputDir }) {
+export function prepareMacosReleaseAssets({ inputRoot, outputDir, stagingPercentage = null }) {
   inputRoot = resolve(projectRoot, inputRoot);
   outputDir = resolve(projectRoot, outputDir);
 
@@ -302,6 +320,10 @@ export function prepareMacosReleaseAssets({ inputRoot, outputDir }) {
     releaseDate: latestDate(manifests.map(({ manifest }) => manifest.releaseDate)),
   };
 
+  if (stagingPercentage != null) {
+    mergedManifest.stagingPercentage = stagingPercentage;
+  }
+
   writeFileSync(join(outputDir, "latest-mac.yml"), serializeLatestMacManifest(mergedManifest), "utf8");
   writeFileSync(
     join(outputDir, "mac-release-assets.json"),
@@ -319,6 +341,7 @@ function main() {
   prepareMacosReleaseAssets({
     inputRoot: requireOption("--input-root"),
     outputDir: requireOption("--output-dir"),
+    stagingPercentage: parseOptionalPercentage("--staging-percentage"),
   });
 }
 

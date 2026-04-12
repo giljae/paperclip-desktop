@@ -2,16 +2,18 @@
 
 This is the repeatable operator guide for shipping `paperclip-desktop`.
 
-It documents the exact release path now in use:
+It documents the safe default stable release path now in use:
 
-1. pin the desktop app to the desired upstream Paperclip version
+1. set the desktop version and pin the desired upstream Paperclip version
 2. build signed staged macOS artifacts locally
-3. publish the signed mac release immediately if needed
-4. submit the shipped mac ZIPs to Apple notarization without waiting
-5. monitor notarization status separately
-6. staple the approved app bundles locally
-7. repackage final notarized ZIP/DMG assets from the stapled apps
-8. replace the GitHub release assets with the notarized versions
+3. verify the exact built artifacts locally
+4. create or update a draft GitHub release for staging
+5. submit the staged mac ZIPs to Apple notarization without waiting
+6. monitor notarization status separately
+7. staple the approved app bundles locally
+8. repackage final notarized ZIP/DMG assets from the stapled apps
+9. replace the draft release assets with the notarized versions
+10. publish the release only after the final notarized assets are uploaded
 
 This avoids:
 
@@ -19,6 +21,7 @@ This avoids:
 - waiting on Apple during the main release path
 - burning GitHub-hosted macOS minutes on long notarization waits
 - accidental multi-platform release runs when only mac is needed
+- exposing pre-notarized builds to auto-update users
 
 ## Current Release Model
 
@@ -29,12 +32,90 @@ Current state of the repo:
 - macOS release packaging uses the staged flow in `scripts/release-macos-local.mjs`
 - notarization submission is separate from the build
 - notarization status checks are separate from submission
+- `latest-mac.yml` is the mac auto-update activation switch and must only be published with the final notarized assets
+
+Safe default policy for stable mac releases:
+
+- do the mac build locally with the staged flow
+- create a draft GitHub release for notarization staging
+- do not publish `latest-mac.yml` before notarization is complete
+- do not publish the GitHub release before the final notarized assets are uploaded
+- treat any pre-notarization release assets as internal staging assets only
+- use `scripts/publish-macos-release-assets.mjs` for mac GitHub release uploads so staging uploads cannot accidentally include `latest-mac.yml`
 
 Manual workflows available in GitHub Actions:
 
 - `Release Desktop`
 - `Submit macOS Release for Notarization`
 - `Check macOS Notarization Status`
+
+## Release Notes Style
+
+For stable releases, use short user-friendly GitHub release notes rather than an internal changelog dump.
+
+Default style:
+
+- one short opening sentence about the release
+- a `What’s new` section with the most user-visible changes
+- the bundled upstream Paperclip version
+- a short macOS trust/distribution note
+- an optional rollout note if `stagingPercentage` is being used
+
+Use plain language. Prefer user impact over implementation detail.
+
+Recommended draft release notes template:
+
+```md
+Paperclip Desktop <DESKTOP_VERSION>
+
+This release is being prepared for public launch.
+
+What’s new:
+- <user-facing improvement 1>
+- <user-facing improvement 2>
+- <user-facing improvement 3>
+
+Bundled upstream Paperclip:
+- <UPSTREAM_VERSION>
+
+Status:
+- macOS assets are signed and in notarization staging
+```
+
+Recommended final release notes template:
+
+```md
+Paperclip Desktop <DESKTOP_VERSION>
+
+This release improves reliability and polish across the desktop app, with a safer and more stable update experience on macOS.
+
+What’s new:
+- <user-facing improvement 1>
+- <user-facing improvement 2>
+- <user-facing improvement 3>
+
+Bundled upstream Paperclip:
+- <UPSTREAM_VERSION>
+
+macOS:
+- Signed with Developer ID
+- Notarized by Apple
+- Stapled and repackaged from the approved notarized app bundles
+```
+
+If a staged rollout is being used, append:
+
+```md
+Rollout:
+- This update is rolling out gradually to macOS users.
+```
+
+Avoid:
+
+- internal implementation details unless they matter to end users
+- commit-by-commit summaries
+- workflow or CI details
+- mentioning draft or staging mechanics in the final public release notes
 
 ## Prerequisites
 
@@ -71,7 +152,7 @@ Validate that setup:
 xcrun notarytool history --keychain-profile paperclip-notary
 ```
 
-## Step 1: Pin To The Desired Upstream Paperclip Version
+## Step 1: Set Desktop And Upstream Versions
 
 Check the latest stable upstream server version:
 
@@ -79,17 +160,18 @@ Check the latest stable upstream server version:
 npm view @paperclipai/server version
 ```
 
-Set the desktop repo to that version:
+Set the desktop app version and the upstream Paperclip version:
 
 ```bash
-pnpm pkg set "devDependencies.@paperclipai/server=<VERSION>"
+pnpm pkg set "version=<DESKTOP_VERSION>"
+pnpm pkg set "devDependencies.@paperclipai/server=<UPSTREAM_VERSION>"
 pnpm install
 ```
 
-Confirm the lockfile moved cleanly:
+Confirm the package metadata and lockfile moved cleanly:
 
 ```bash
-rg -n "<VERSION>|canary" package.json pnpm-lock.yaml
+rg -n "\"version\": \"<DESKTOP_VERSION>\"|<UPSTREAM_VERSION>|canary" package.json pnpm-lock.yaml
 ```
 
 If you are intentionally shipping stable, there should be no lingering `canary` references in the Paperclip dependency graph.
@@ -134,11 +216,20 @@ codesign -dvv 'release/local-macos/arm64/mac-arm64/Paperclip Desktop.app'
 
 The authority should be your `Developer ID Application` identity.
 
-## Step 3: Publish The Signed Mac Release
+## Step 3: Verify The Exact Built Artifacts Locally
 
-If you need to release before notarization finishes, publish the signed mac assets first.
+Before anything is uploaded:
 
-First prepare the updater-compatible release bundle:
+- launch and test the exact packaged `.app` bundles
+- confirm the upstream Paperclip version in the built payload
+- confirm the app version shown in the bundle metadata matches `package.json`
+- confirm signatures are valid on both architectures
+
+Do not submit or publish artifacts you have not tested locally.
+
+## Step 4: Create A Draft GitHub Release For Staging
+
+Prepare the release-asset bundle that uses the public updater-compatible file names:
 
 ```bash
 node scripts/prepare-macos-release-assets.mjs \
@@ -148,31 +239,30 @@ node scripts/prepare-macos-release-assets.mjs \
 
 This produces one merged `latest-mac.yml` plus hyphenated asset names that match what `electron-updater` requests.
 
-Create or update the GitHub release manually:
+Create or update a draft GitHub release and upload only the staging-safe assets:
 
 ```bash
-gh release edit v<DESKTOP_VERSION> --notes-file /path/to/notes.md
-
-gh release upload v<DESKTOP_VERSION> \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>.dmg \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>.dmg.blockmap \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-mac.zip \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-mac.zip.blockmap \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64.dmg \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64.dmg.blockmap \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64-mac.zip \
-  release/local-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64-mac.zip.blockmap \
-  release/local-macos/release-assets/latest-mac.yml \
-  --clobber
+pnpm publish-release-assets:mac -- \
+  --mode staging \
+  --tag v<DESKTOP_VERSION> \
+  --input-dir release/local-macos/release-assets \
+  --notes-file /path/to/draft-notes.md
 ```
 
-At this stage the app is:
+At this stage the release must remain a draft.
+
+Do not upload `latest-mac.yml` yet.
+
+Why:
 
 - signed
 - not yet notarized
-- suitable for immediate release if needed, with the usual Gatekeeper caveat until notarization is complete
+- not safe for public auto-update discovery yet
+- the notarization submit workflow only needs the ZIP assets from the draft release
 
-## Step 4: Submit To Apple Notarization Without Waiting
+`latest-mac.yml` is what makes mac auto-update discover the release. Publishing it too early can cause clients to download a signed but not-yet-notarized build.
+
+## Step 5: Submit To Apple Notarization Without Waiting
 
 Preferred path:
 
@@ -195,11 +285,11 @@ gh run watch <RUN_ID> --interval 10
 
 This workflow:
 
-- downloads the live release ZIP assets
+- downloads the draft release ZIP assets
 - submits `x64` and `arm64` ZIPs to Apple with `--no-wait`
 - stores the Apple submission IDs as an artifact
 
-## Step 5: Monitor Apple Status
+## Step 6: Monitor Apple Status
 
 There are two valid ways to monitor.
 
@@ -251,7 +341,7 @@ gh run watch <RUN_ID> --interval 10
 
 Only use this when local monitoring is not available. Local monitoring is cheaper.
 
-## Step 6: Staple The Approved App Bundles
+## Step 7: Staple The Approved App Bundles
 
 Once both submissions show `Accepted`, staple the exact approved app bundles:
 
@@ -265,7 +355,7 @@ xcrun stapler validate -v 'release/local-macos/arm64/mac-arm64/Paperclip Desktop
 
 Do not rebuild before stapling. Staple the exact app bundles that correspond to the notarized ZIP submissions.
 
-## Step 7: Repackage Final Notarized Assets
+## Step 8: Repackage Final Notarized Assets
 
 Build final distributables from the stapled apps:
 
@@ -300,7 +390,28 @@ node scripts/prepare-macos-release-assets.mjs \
   --output-dir release/notarized-macos/release-assets
 ```
 
-## Step 8: Verify The Final Notarized Outputs
+This is the first point at which `latest-mac.yml` is allowed to be published.
+
+Optional staged rollout:
+
+If you want the new stable version to reach only a subset of users at first, set a rollout percentage while generating the final merged `latest-mac.yml`:
+
+```bash
+node scripts/prepare-macos-release-assets.mjs \
+  --input-root release/notarized-macos \
+  --output-dir release/notarized-macos/release-assets \
+  --staging-percentage 10
+```
+
+Example values:
+
+- `10` for a 10% rollout
+- `25` for a 25% rollout
+- `100` for full rollout
+
+Only change the rollout percentage on the final notarized release assets.
+
+## Step 9: Verify The Final Notarized Outputs
 
 Run the stapled verifier:
 
@@ -328,24 +439,17 @@ Expected final artifacts:
 - `latest-mac.yml`
 - `verification-summary.json`
 
-## Step 9: Replace The GitHub Release Assets
+## Step 10: Replace The Draft Release Assets And Publish The Release
 
-Update release notes to reflect notarization completion, then upload the stapled assets with `--clobber`:
+Update release notes to reflect notarization completion, upload the stapled assets including `latest-mac.yml`, then publish the draft release:
 
 ```bash
-gh release edit v<DESKTOP_VERSION> --notes-file /path/to/notarized-notes.md
-
-gh release upload v<DESKTOP_VERSION> \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>.dmg \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>.dmg.blockmap \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-mac.zip \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-mac.zip.blockmap \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64.dmg \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64.dmg.blockmap \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64-mac.zip \
-  release/notarized-macos/release-assets/Paperclip-Desktop-<DESKTOP_VERSION>-arm64-mac.zip.blockmap \
-  release/notarized-macos/release-assets/latest-mac.yml \
-  --clobber
+pnpm publish-release-assets:mac -- \
+  --mode final \
+  --tag v<DESKTOP_VERSION> \
+  --input-dir release/notarized-macos/release-assets \
+  --notes-file /path/to/final-notes.md \
+  --publish
 ```
 
 At that point the public release is:
@@ -354,54 +458,65 @@ At that point the public release is:
 - notarized
 - stapled
 - repackaged from the approved notarized app bundles
+- visible to auto-update clients only after the final notarized assets exist
 
-## Optional: Run The Build Workflow Manually
+## Optional: Run The Build Workflow Manually For Verification Only
 
-If you want GitHub to build a release manually instead of local packaging:
+If you want GitHub to build artifacts manually instead of local packaging, use the workflow for verification builds only.
+
+For stable mac releases, do not use `Release Desktop` against a version tag before final notarized assets are ready. If you run it with `ref=v<DESKTOP_VERSION>`, the workflow can publish release assets too early.
+
+Safe uses:
 
 Mac only:
 
 ```bash
-gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=mac
+gh workflow run release.yml --ref master -f ref=<NON_TAG_REF> -f platforms=mac
 ```
 
 Windows only:
 
 ```bash
-gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=windows
+gh workflow run release.yml --ref master -f ref=<NON_TAG_REF> -f platforms=windows
 ```
 
 Linux only:
 
 ```bash
-gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=linux
+gh workflow run release.yml --ref master -f ref=<NON_TAG_REF> -f platforms=linux
 ```
 
 All platforms:
 
 ```bash
-gh workflow run release.yml --ref master -f ref=v<DESKTOP_VERSION> -f platforms=all
+gh workflow run release.yml --ref master -f ref=<NON_TAG_REF> -f platforms=all
 ```
 
 Important:
 
 - nothing auto-runs on tag push anymore
 - manual invocation is required
+- use non-tag refs for verification-only builds
+- stable mac releases should follow the draft-release flow in this runbook instead of tag-publishing from the workflow
+- the workflow no longer publishes when mac artifacts are included in the run
 
 ## Recommended Short Path For Mac-Only Releases
 
 For the common case, use this order:
 
-1. pin upstream version
+1. set the desktop version and upstream version
 2. `pnpm release:mac:local:x64`
 3. `pnpm release:mac:local:arm64`
-4. publish signed mac release
-5. submit ZIPs for notarization asynchronously
-6. monitor until both are `Accepted`
-7. staple local `.app` bundles
-8. repackage notarized ZIP/DMG
-9. prepare the merged mac updater bundle
-10. replace release assets
+4. test the exact local `.app` bundles
+5. prepare `release/local-macos/release-assets`
+6. create or update a draft release and upload ZIP/DMG assets only
+7. submit ZIPs for notarization asynchronously
+8. monitor until both are `Accepted`
+9. staple the exact local `.app` bundles
+10. repackage notarized ZIP/DMG
+11. prepare the final merged mac updater bundle, optionally with `--staging-percentage <N>`
+12. upload final assets including `latest-mac.yml`
+13. publish the draft release
 
 ## Guardrails
 
@@ -410,7 +525,11 @@ For the common case, use this order:
 - Do not notarize both the app and the DMG in separate passes.
 - Do not rebuild a different app for notarization replacement.
 - Do not staple a rebuilt app that is not the one Apple accepted.
-- Do not replace the release assets until the stapled outputs have passed local verification.
+- Do not publish `latest-mac.yml` until the stapled outputs have passed local verification.
+- Do not publish a stable GitHub release before the final notarized assets are uploaded.
+- Do not use a public release plus `latest-mac.yml` as a staging mechanism.
+- Do not run `Release Desktop` against a stable version tag unless you intentionally want it to publish final release assets.
+- Do not change `stagingPercentage` on pre-notarization assets.
 
 ## File References
 
@@ -422,6 +541,7 @@ Primary scripts and workflows:
 - `scripts/release-macos-local.mjs`
 - `scripts/repackage-prebuilt-macos.mjs`
 - `scripts/prepare-macos-release-assets.mjs`
+- `scripts/publish-macos-release-assets.mjs`
 - `scripts/verify-macos-release.mjs`
 
 Background docs:
