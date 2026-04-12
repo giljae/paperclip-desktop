@@ -108,6 +108,36 @@ test("preflight rejects http remotes before any network call", async () => {
   assert.equal(called, false);
 });
 
+test("preflight allows http remotes on private networks", async () => {
+  const responses = [
+    jsonResponse(
+      {
+        status: "ok",
+        version: "2026.403.0",
+        deploymentMode: "authenticated",
+        deploymentExposure: "private",
+        authReady: true,
+        bootstrapStatus: "ready",
+        bootstrapInviteActive: false,
+      },
+      200,
+    ),
+    new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    }),
+  ];
+
+  const result = await preflightRemoteConnection({
+    remoteUrl: "http://paperclip-host.tailnet.ts.net:3200",
+    fetchImpl: async () => responses.shift(),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.origin, "http://paperclip-host.tailnet.ts.net:3200");
+  assert.equal(result.sessionState, "signed_out");
+});
+
 test("preflight rejects non-Paperclip endpoints", async () => {
   const result = await preflightRemoteConnection({
     remoteUrl: "https://example.com",

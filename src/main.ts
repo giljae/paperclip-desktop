@@ -1096,7 +1096,7 @@ async function bootRemote(options: {
     await ensureLauncherWindow("remote-form");
     sendConnectionError(
       "Invalid remote URL",
-      error instanceof Error ? error.message : "Enter a valid HTTPS URL.",
+      error instanceof Error ? error.message : "Enter a valid remote URL.",
     );
     sendLauncherNavigation("error");
     return;

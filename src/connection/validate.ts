@@ -10,18 +10,24 @@ const PRIVATE_HOST_SUFFIXES = [".internal", ".local", ".lan", ".home", ".ts.net"
 export function normalizeRemoteUrl(input: string): NormalizedRemoteUrl {
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new Error("Enter a valid HTTPS URL.");
+    throw new Error("Enter a valid remote URL.");
   }
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error("Enter a valid HTTPS URL.");
+    throw new Error("Enter a valid remote URL.");
   }
 
-  if (parsed.protocol !== "https:") {
-    throw new Error("Remote URLs must use HTTPS.");
+  const isHttp = parsed.protocol === "http:";
+  const isHttps = parsed.protocol === "https:";
+  if (!isHttp && !isHttps) {
+    throw new Error("Remote URLs must use HTTP or HTTPS.");
+  }
+
+  if (isHttp && !isPrivateHostname(parsed.hostname)) {
+    throw new Error("Remote URLs must use HTTPS unless the host is on a local or private network.");
   }
 
   if (parsed.username || parsed.password) {

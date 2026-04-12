@@ -708,8 +708,8 @@ export function getLauncherHtml(): string {
     <div class="form-group">
       <label for="remoteUrl">Remote URL</label>
       <input type="text" id="remoteUrl" placeholder="https://paperclip.example.com">
-      <div class="field-hint">Desktop requires HTTPS and verifies /api/health and auth readiness before loading a remote origin.</div>
-      <div class="field-error" id="urlError">Enter a valid HTTPS URL.</div>
+      <div class="field-hint">Desktop verifies /api/health and auth readiness before loading a remote origin. Public remotes must use HTTPS; local/private hosts can use HTTP.</div>
+      <div class="field-error" id="urlError">Enter a valid remote URL.</div>
       <div class="field-success" id="urlSuccess">Verified authenticated Paperclip remote detected.</div>
     </div>
 
@@ -812,7 +812,7 @@ export function getLauncherHtml(): string {
       <label for="modalUrl">URL</label>
       <input type="text" id="modalUrl" placeholder="https://paperclip.example.com">
       <div class="field-hint">Remote profiles are verified before use and never store raw passwords.</div>
-      <div class="field-error" id="modalError">Enter a valid HTTPS URL.</div>
+      <div class="field-error" id="modalError">Enter a valid remote URL.</div>
     </div>
 
     <div class="form-actions">
@@ -1031,7 +1031,7 @@ async function verifyRemote() {
   resetVerificationUi();
 
   if (!remoteUrl) {
-    document.getElementById("urlError").textContent = "Enter a valid HTTPS URL.";
+    document.getElementById("urlError").textContent = "Enter a valid remote URL.";
     document.getElementById("urlError").style.display = "block";
     return;
   }
@@ -1047,7 +1047,7 @@ async function verifyRemote() {
 
     if (result.reason === "invalid_url") {
       document.getElementById("testStatus").innerHTML = "";
-      document.getElementById("urlError").textContent = result.detail || "Enter a valid HTTPS URL.";
+      document.getElementById("urlError").textContent = result.detail || "Enter a valid remote URL.";
       document.getElementById("urlError").style.display = "block";
       return;
     }
@@ -1286,7 +1286,7 @@ async function saveModal() {
     closeModal();
     restoreModalReturnView();
   } catch (error) {
-    document.getElementById("modalError").textContent = error && error.message ? error.message : "Enter a valid HTTPS URL.";
+    document.getElementById("modalError").textContent = error && error.message ? error.message : "Enter a valid remote URL.";
     document.getElementById("modalError").style.display = "block";
   }
 }

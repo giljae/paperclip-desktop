@@ -35,7 +35,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
     return buildFailure({
       remoteUrl: options.remoteUrl,
       reason: "invalid_url",
-      detail: error instanceof Error ? error.message : "Enter a valid HTTPS URL.",
+      detail: error instanceof Error ? error.message : "Enter a valid remote URL.",
     });
   }
 
