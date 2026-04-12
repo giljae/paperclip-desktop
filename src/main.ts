@@ -16,7 +16,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import treeKill from "tree-kill";
-import { initAutoUpdater } from "./updater";
+import { checkForUpdatesFromMenu, initAutoUpdater } from "./updater";
 import { getLauncherHtml } from "./launcher-html";
 import { handleSwipeNavigation } from "./navigation-gestures";
 import {
@@ -1380,6 +1380,14 @@ function rebuildAppMenu(): void {
       label: "Paperclip",
       submenu: [
         { role: "about" },
+        {
+          label: "Check for Updates",
+          click: () => {
+            void checkForUpdatesFromMenu(
+              BrowserWindow.getFocusedWindow() ?? mainWindow ?? launcherWindow,
+            );
+          },
+        },
         { type: "separator" },
         { role: "quit" },
       ],
@@ -1415,8 +1423,15 @@ function rebuildAppMenu(): void {
       ],
     },
     {
-      label: "Window",
-      submenu: [{ role: "minimize" }, { role: "close" }],
+      label: "Help",
+      submenu: [
+        {
+          label: "Documentation",
+          click: () => {
+            void shell.openExternal("https://docs.paperclip.ing/");
+          },
+        },
+      ],
     },
   ];
 
