@@ -2,6 +2,7 @@ export interface NormalizedRemoteUrl {
   input: string;
   normalizedUrl: string;
   origin: string;
+  insecureTransport: boolean;
   warning?: string;
 }
 
@@ -26,10 +27,6 @@ export function normalizeRemoteUrl(input: string): NormalizedRemoteUrl {
     throw new Error("Remote URLs must use HTTP or HTTPS.");
   }
 
-  if (isHttp && !isPrivateHostname(parsed.hostname)) {
-    throw new Error("Remote URLs must use HTTPS unless the host is on a local or private network.");
-  }
-
   if (parsed.username || parsed.password) {
     throw new Error("Remote URLs cannot include username or password.");
   }
@@ -43,11 +40,13 @@ export function normalizeRemoteUrl(input: string): NormalizedRemoteUrl {
     input: trimmed,
     normalizedUrl,
     origin: parsed.origin,
+    insecureTransport: isHttp,
+    warning: isHttp ? buildInsecureHttpWarning(parsed.hostname) : undefined,
   };
 }
 
 export function isPrivateHostname(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
+  const lower = normalizeHostname(hostname);
 
   if (lower === "localhost" || lower === "::1" || lower.endsWith(".localhost")) {
     return true;
@@ -86,6 +85,26 @@ function isPrivateIpv4(hostname: string): boolean {
 }
 
 function isPrivateIpv6(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
+  const lower = normalizeHostname(hostname);
   return lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd");
+}
+
+function normalizeHostname(hostname: string): string {
+  const lower = hostname.toLowerCase();
+  if (lower.startsWith("[") && lower.endsWith("]")) {
+    return lower.slice(1, -1);
+  }
+
+  return lower;
+}
+
+function buildInsecureHttpWarning(hostname: string): string {
+  const baseWarning =
+    "Warning: this remote uses HTTP without TLS. Network traffic can be read or modified by anyone on the path.";
+
+  if (isPrivateHostname(hostname)) {
+    return `${baseWarning} Only continue if you trust the local or private network carrying this connection.`;
+  }
+
+  return `${baseWarning} This host is not on a recognized private network, so the risk is higher.`;
 }

@@ -1085,6 +1085,7 @@ async function bootRemote(options: {
   saveProfile: boolean;
   rememberChoiceExplicit?: boolean;
   rememberChoice?: boolean;
+  allowInsecureHttp?: boolean;
 }): Promise<void> {
   const bootId = ++bootSequence;
   const previousConnectionMode = currentConnection?.mode ?? null;
@@ -1092,6 +1093,9 @@ async function bootRemote(options: {
   let normalized;
   try {
     normalized = normalizeRemoteUrl(options.remoteUrl);
+    if (normalized.insecureTransport && options.allowInsecureHttp !== true) {
+      throw new Error("HTTP remotes require confirming that you want to allow an insecure connection.");
+    }
   } catch (error) {
     await ensureLauncherWindow("remote-form");
     sendConnectionError(
@@ -1140,12 +1144,13 @@ async function bootRemote(options: {
 
   let savedProfile: ConnectionProfile | null = null;
   if (options.profileId) {
-    connectionStore.syncRemoteProfileUrl(options.profileId, result.normalizedUrl);
+    connectionStore.syncRemoteProfileUrl(options.profileId, result.normalizedUrl, result.insecureTransport);
     savedProfile = connectionStore.getProfile(options.profileId);
   } else if (options.saveProfile || options.rememberChoice) {
     savedProfile = connectionStore.saveRemoteProfile({
       name: options.displayName,
       remoteUrl: result.normalizedUrl,
+      allowInsecureHttp: result.insecureTransport,
     });
   }
 
@@ -1228,6 +1233,7 @@ async function bootSavedProfile(
     saveProfile: false,
     rememberChoiceExplicit: options.rememberChoiceExplicit,
     rememberChoice: options.rememberChoice,
+    allowInsecureHttp: profile.allowInsecureHttp,
   });
 }
 
@@ -1246,7 +1252,7 @@ function registerLauncherIpc(): void {
 
   ipcMain.handle(
     "launcher:save-remote-profile",
-    (_event, payload: { profileId?: string; name?: string; remoteUrl: string }) => {
+    (_event, payload: { profileId?: string; name?: string; remoteUrl: string; allowInsecureHttp?: boolean }) => {
       connectionStore.saveRemoteProfile(payload);
       sendLauncherState();
       return buildLauncherSnapshot();
@@ -1296,6 +1302,7 @@ function registerLauncherIpc(): void {
         displayName?: string;
         saveProfile: boolean;
         rememberChoice: boolean;
+        allowInsecureHttp?: boolean;
       },
     ) => {
       void bootRemote({

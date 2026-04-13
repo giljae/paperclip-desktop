@@ -27,6 +27,7 @@ export interface ConnectionProfile {
   name: string;
   mode: ConnectionMode;
   remoteUrl?: string;
+  allowInsecureHttp?: boolean;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -55,6 +56,7 @@ export interface RemotePreflightResult {
   ok: boolean;
   normalizedUrl: string;
   origin: string;
+  insecureTransport: boolean;
   paperclipDetected: boolean;
   deploymentMode: DeploymentMode | null;
   deploymentExposure: DeploymentExposure | null;

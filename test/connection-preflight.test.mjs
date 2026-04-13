@@ -35,6 +35,7 @@ test("preflight accepts authenticated Paperclip with active session", async () =
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.insecureTransport, false);
   assert.equal(result.sessionState, "signed_in");
   assert.equal(result.deploymentMode, "authenticated");
   assert.equal(result.bootstrapStatus, "ready");
@@ -66,6 +67,7 @@ test("preflight treats 401 session probe as sign-in required", async () => {
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.insecureTransport, false);
   assert.equal(result.sessionState, "signed_out");
   assert.equal(result.bootstrapStatus, "bootstrap_pending");
 });
@@ -89,13 +91,14 @@ test("preflight blocks local_trusted remotes", async () => {
   });
 
   assert.equal(result.ok, false);
+  assert.equal(result.insecureTransport, false);
   assert.equal(result.reason, "unsupported_local_trusted");
 });
 
-test("preflight rejects http remotes before any network call", async () => {
+test("preflight rejects unsupported URL schemes before any network call", async () => {
   let called = false;
   const result = await preflightRemoteConnection({
-    remoteUrl: "http://paperclip.example.com",
+    remoteUrl: "ftp://paperclip.example.com",
     fetchImpl: async () => {
       called = true;
       return jsonResponse({ status: "ok" }, 200);
@@ -104,11 +107,11 @@ test("preflight rejects http remotes before any network call", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.reason, "invalid_url");
-  assert.match(result.detail, /https/i);
+  assert.match(result.detail, /http or https/i);
   assert.equal(called, false);
 });
 
-test("preflight allows http remotes on private networks", async () => {
+test("preflight allows http remotes and carries the insecurity warning", async () => {
   const responses = [
     jsonResponse(
       {
@@ -129,13 +132,15 @@ test("preflight allows http remotes on private networks", async () => {
   ];
 
   const result = await preflightRemoteConnection({
-    remoteUrl: "http://paperclip-host.tailnet.ts.net:3200",
+    remoteUrl: "http://paperclip.example.com:3200",
     fetchImpl: async () => responses.shift(),
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.origin, "http://paperclip-host.tailnet.ts.net:3200");
+  assert.equal(result.insecureTransport, true);
+  assert.equal(result.origin, "http://paperclip.example.com:3200");
   assert.equal(result.sessionState, "signed_out");
+  assert.match(result.warning, /without TLS/i);
 });
 
 test("preflight rejects non-Paperclip endpoints", async () => {
@@ -145,6 +150,7 @@ test("preflight rejects non-Paperclip endpoints", async () => {
   });
 
   assert.equal(result.ok, false);
+  assert.equal(result.insecureTransport, false);
   assert.equal(result.reason, "not_paperclip");
 });
 
@@ -157,6 +163,7 @@ test("preflight classifies TLS failures", async () => {
   });
 
   assert.equal(result.ok, false);
+  assert.equal(result.insecureTransport, false);
   assert.equal(result.reason, "tls_error");
 });
 
