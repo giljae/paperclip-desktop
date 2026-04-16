@@ -26,10 +26,13 @@ test("connection store persists remote profiles and startup preference", () => {
     ok: true,
     normalizedUrl: "https://paperclip-host.tailnet.ts.net/",
     origin: "https://paperclip-host.tailnet.ts.net",
+    insecureTransport: false,
     paperclipDetected: true,
     deploymentMode: "authenticated",
     deploymentExposure: "private",
     authReady: true,
+    bootstrapStatus: null,
+    bootstrapInviteActive: null,
     sessionState: "signed_out",
     version: "2026.403.0",
   });
@@ -69,4 +72,28 @@ test("connection store duplicates and deletes remote profiles", () => {
   assert.equal(profiles.length, 1);
   assert.equal(profiles[0].id, duplicate.id);
   assert.match(profiles[0].name, /\(copy\)$/);
+});
+
+test("connection store requires explicit acknowledgement before saving an HTTP profile", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-http-"));
+  const store = new ConnectionStore(getConnectionsFilePath(tempDir));
+
+  assert.throws(
+    () => store.saveRemoteProfile({
+      name: "Insecure",
+      remoteUrl: "http://paperclip.example.com",
+    }),
+    /allow an insecure connection/i,
+  );
+
+  const profile = store.saveRemoteProfile({
+    name: "Insecure",
+    remoteUrl: "http://paperclip.example.com",
+    allowInsecureHttp: true,
+  });
+  assert.equal(profile.allowInsecureHttp, true);
+
+  const reloaded = new ConnectionStore(getConnectionsFilePath(tempDir));
+  const saved = reloaded.getProfile(profile.id);
+  assert.equal(saved.allowInsecureHttp, true);
 });

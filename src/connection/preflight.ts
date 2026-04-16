@@ -34,8 +34,9 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
   } catch (error) {
     return buildFailure({
       remoteUrl: options.remoteUrl,
+      insecureTransport: false,
       reason: "invalid_url",
-      detail: error instanceof Error ? error.message : "Enter a valid HTTPS URL.",
+      detail: error instanceof Error ? error.message : "Enter a valid remote URL.",
     });
   }
 
@@ -48,6 +49,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         remoteUrl: normalized.normalizedUrl,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         reason: "not_paperclip",
         detail: "This host does not appear to expose the Paperclip health endpoint.",
         warning: normalized.warning,
@@ -59,6 +61,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         ok: false,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         paperclipDetected: true,
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
@@ -78,6 +81,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         ok: false,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         paperclipDetected: true,
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
@@ -98,6 +102,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         ok: false,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         paperclipDetected: true,
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
@@ -117,6 +122,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         ok: false,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         paperclipDetected: true,
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
@@ -137,6 +143,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
         ok: false,
         normalizedUrl: normalized.normalizedUrl,
         origin: normalized.origin,
+        insecureTransport: normalized.insecureTransport,
         paperclipDetected: true,
         deploymentMode: health.deploymentMode,
         deploymentExposure: health.deploymentExposure,
@@ -155,6 +162,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
       ok: true,
       normalizedUrl: normalized.normalizedUrl,
       origin: normalized.origin,
+      insecureTransport: normalized.insecureTransport,
       paperclipDetected: true,
       deploymentMode: health.deploymentMode,
       deploymentExposure: health.deploymentExposure,
@@ -170,6 +178,7 @@ export async function preflightRemoteConnection(options: PreflightOptions): Prom
       remoteUrl: normalized.normalizedUrl,
       normalizedUrl: normalized.normalizedUrl,
       origin: normalized.origin,
+      insecureTransport: normalized.insecureTransport,
       reason: classifyFetchError(error),
       detail: error instanceof Error ? error.message : "Remote preflight failed.",
       warning: normalized.warning,
@@ -289,6 +298,7 @@ function buildFailure(input: {
   remoteUrl: string;
   normalizedUrl?: string;
   origin?: string;
+  insecureTransport?: boolean;
   reason: RemotePreflightResult["reason"];
   detail: string;
   warning?: string;
@@ -297,6 +307,7 @@ function buildFailure(input: {
     ok: false,
     normalizedUrl: input.normalizedUrl ?? input.remoteUrl.trim(),
     origin: input.origin ?? "",
+    insecureTransport: input.insecureTransport === true,
     paperclipDetected: false,
     deploymentMode: null,
     deploymentExposure: null,

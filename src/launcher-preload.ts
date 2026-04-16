@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
   bootstrap: () => ipcRenderer.invoke("launcher:bootstrap"),
   setChooserMode: (mode: "local_embedded" | "remote_existing") =>
     ipcRenderer.invoke("launcher:set-chooser-mode", mode),
-  saveRemoteProfile: (payload: { profileId?: string; name?: string; remoteUrl: string }) =>
+  saveRemoteProfile: (payload: { profileId?: string; name?: string; remoteUrl: string; allowInsecureHttp?: boolean }) =>
     ipcRenderer.invoke("launcher:save-remote-profile", payload),
   duplicateProfile: (profileId: string) => ipcRenderer.invoke("launcher:duplicate-profile", profileId),
   deleteProfile: (profileId: string) => ipcRenderer.invoke("launcher:delete-profile", profileId),
@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("paperclipLauncher", {
     displayName?: string;
     saveProfile: boolean;
     rememberChoice: boolean;
+    allowInsecureHttp?: boolean;
   }) => ipcRenderer.invoke("launcher:connect-remote", payload),
   connectSavedProfile: (payload: { profileId: string; rememberChoice: boolean }) =>
     ipcRenderer.invoke("launcher:connect-saved-profile", payload),

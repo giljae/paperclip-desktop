@@ -75,7 +75,9 @@ export class ConnectionStore {
       return LOCAL_PROFILE_ID;
     }
 
-    return this.cache.remoteProfiles.some((profile) => profile.id === state.activeProfileId)
+    return this.cache.remoteProfiles.some((profile) =>
+      profile.id === state.activeProfileId
+      && (!profile.remoteUrl?.startsWith("http://") || profile.allowInsecureHttp === true))
       ? state.activeProfileId
       : null;
   }
@@ -84,10 +86,14 @@ export class ConnectionStore {
     profileId?: string;
     name?: string;
     remoteUrl: string;
+    allowInsecureHttp?: boolean;
     now?: string;
   }): ConnectionProfile {
     const now = input.now ?? new Date().toISOString();
     const normalized = normalizeRemoteUrl(input.remoteUrl);
+    if (normalized.insecureTransport && input.allowInsecureHttp !== true) {
+      throw new Error("HTTP remotes require confirming that you want to allow an insecure connection.");
+    }
     const existingIndex = input.profileId
       ? this.cache.remoteProfiles.findIndex((profile) => profile.id === input.profileId)
       : -1;
@@ -98,6 +104,7 @@ export class ConnectionStore {
         ...existing,
         name: sanitizeProfileName(input.name, normalized.origin),
         remoteUrl: normalized.normalizedUrl,
+        allowInsecureHttp: normalized.insecureTransport ? true : undefined,
         updatedAt: now,
       };
       this.cache.remoteProfiles[existingIndex] = updated;
@@ -110,6 +117,7 @@ export class ConnectionStore {
       name: sanitizeProfileName(input.name, normalized.origin),
       mode: "remote_existing",
       remoteUrl: normalized.normalizedUrl,
+      allowInsecureHttp: normalized.insecureTransport ? true : undefined,
       createdAt: now,
       updatedAt: now,
       lastHealth: "unknown",
@@ -127,6 +135,7 @@ export class ConnectionStore {
       ...existing,
       id: randomUUID(),
       name: `${existing.name} (copy)`,
+      allowInsecureHttp: existing.allowInsecureHttp,
       createdAt: now,
       updatedAt: now,
       lastConnectedAt: undefined,
@@ -183,6 +192,7 @@ export class ConnectionStore {
     profile.updatedAt = now;
     if (result) {
       profile.remoteUrl = result.normalizedUrl;
+      profile.allowInsecureHttp = result.insecureTransport ? true : undefined;
       profile.lastHealth = deriveHealth(result);
       profile.lastDeploymentMode = result.deploymentMode;
       profile.lastSessionState = result.sessionState;
@@ -195,15 +205,22 @@ export class ConnectionStore {
     const profile = this.requireRemoteProfile(profileId);
     profile.updatedAt = now;
     profile.remoteUrl = result.normalizedUrl;
+    profile.allowInsecureHttp = result.insecureTransport ? true : undefined;
     profile.lastHealth = deriveHealth(result);
     profile.lastDeploymentMode = result.deploymentMode;
     profile.lastSessionState = result.sessionState;
     this.persist();
   }
 
-  syncRemoteProfileUrl(profileId: string, normalizedUrl: string, now = new Date().toISOString()): void {
+  syncRemoteProfileUrl(
+    profileId: string,
+    normalizedUrl: string,
+    allowInsecureHttp = false,
+    now = new Date().toISOString(),
+  ): void {
     const profile = this.requireRemoteProfile(profileId);
     profile.remoteUrl = normalizedUrl;
+    profile.allowInsecureHttp = allowInsecureHttp ? true : undefined;
     profile.updatedAt = now;
     this.persist();
   }
@@ -302,6 +319,8 @@ function sanitizeRemoteProfile(raw: unknown): ConnectionProfile | null {
       name: sanitizeProfileName(typeof raw.name === "string" ? raw.name : undefined, normalized.origin),
       mode: "remote_existing",
       remoteUrl: normalized.normalizedUrl,
+      allowInsecureHttp:
+        normalized.insecureTransport && raw.allowInsecureHttp === true ? true : undefined,
       createdAt,
       updatedAt,
       lastConnectedAt: typeof raw.lastConnectedAt === "string" ? raw.lastConnectedAt : undefined,
