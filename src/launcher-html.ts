@@ -341,6 +341,115 @@ export function getLauncherHtml(): string {
   .status-card.warning-card .remember-row label {
     color: inherit;
   }
+
+  .step-panel {
+    width: 340px;
+    border: 1px solid #1f1f22;
+    border-radius: 10px;
+    background: #0d0d10;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    text-align: left;
+    transition: opacity 0.2s;
+  }
+  .step-panel.muted { opacity: 0.4; pointer-events: none; }
+  .step-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: #a1a1aa;
+    margin-bottom: 10px;
+    min-height: 22px;
+  }
+  .step-panel-head.no-body { margin-bottom: 0; }
+  .step-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .step-panel .form-group { width: 100%; margin-bottom: 0; }
+  .step-panel .status-card {
+    width: 100%;
+    margin-bottom: 0;
+  }
+  .step-panel #testStatus .status-badge {
+    margin: 0;
+  }
+  .step-placeholder {
+    font-size: 11px;
+    color: #52525b;
+    padding: 2px 0;
+  }
+
+  /* The plain status-card carries no visible UI inside the step panel;
+     its contents live in the #verifyInfo tooltip. */
+  .step-panel .status-card:not(.warning-card) { display: none; }
+
+  /* Info icon in the verify step head (carries the detail text) */
+  .verify-info {
+    position: relative;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #27272a;
+    color: #a1a1aa;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: help;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .verify-info.visible { display: inline-flex; }
+  .verify-info:hover { background: #3f3f46; color: #e4e4e7; }
+  .verify-info .verify-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    width: 260px;
+    padding: 10px;
+    background: #0a0a0b;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    color: #d4d4d8;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 10;
+    white-space: normal;
+  }
+  .verify-tooltip .tip-detail {
+    display: block;
+    margin-bottom: 8px;
+  }
+  .verify-tooltip .tip-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 10px;
+    row-gap: 3px;
+    font-size: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #27272a;
+  }
+  .verify-tooltip .tip-meta .k { color: #71717a; }
+  .verify-tooltip .tip-meta .v { color: #d4d4d8; font-family: "SF Mono", Menlo, monospace; }
+  .verify-tooltip .tip-meta:empty { display: none; }
+  .verify-info:hover .verify-tooltip,
+  .verify-info:focus .verify-tooltip { opacity: 1; }
+  .step-panel-head .head-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .status-title {
     font-size: 13px;
     font-weight: 500;
@@ -770,46 +879,64 @@ export function getLauncherHtml(): string {
   </div>
 
   <div class="view" id="view-remote-form">
-    <div class="section-title">Connect to Remote Paperclip</div>
+    <div class="section-title">Connect to Remote</div>
+    <div class="section-subtitle">Verify the remote before continuing. HTTP connections require explicit confirmation.</div>
 
-    <div class="form-group">
-      <label for="remoteUrl">Remote URL</label>
-      <input type="text" id="remoteUrl" placeholder="https://paperclip.example.com">
-      <div class="field-hint">Desktop verifies /api/health and auth readiness before loading a remote origin. HTTPS is recommended; HTTP requires an explicit insecure-connection acknowledgment.</div>
-      <div class="field-error" id="urlError">Enter a valid remote URL.</div>
-      <div class="field-success" id="urlSuccess">Verified authenticated Paperclip remote detected.</div>
-    </div>
-
-    <div class="status-card warning-card" id="httpWarningCard">
-      <div class="warning-header">
-        <div class="status-badge warning"><div class="dot"></div>Insecure HTTP</div>
-        <span class="warning-info" tabindex="0" aria-label="More information">?<span class="warning-tooltip" id="httpWarningDetail">This URL disables TLS. Only continue if you trust the network path to this remote. Connect and save stay disabled until you acknowledge.</span></span>
-      </div>
-      <div class="remember-row">
-        <input type="checkbox" id="allowInsecureHttp">
-        <label for="allowInsecureHttp">I understand the risk and want to allow this HTTP connection</label>
+    <div class="step-panel" id="stepPanelUrl">
+      <div class="step-panel-head"><span>Remote URL</span></div>
+      <div class="step-panel-body">
+        <div class="form-group">
+          <input type="text" id="remoteUrl" placeholder="https://paperclip.example.com">
+          <div class="field-hint">Desktop verifies /api/health and auth readiness. HTTPS recommended; HTTP requires acknowledgment.</div>
+          <div class="field-error" id="urlError">Enter a valid remote URL.</div>
+          <div class="field-success" id="urlSuccess">Verified authenticated Paperclip remote detected.</div>
+        </div>
       </div>
     </div>
 
-    <div class="form-group">
-      <label for="displayName">Display name <span style="color:#3f3f46">(optional)</span></label>
-      <input type="text" id="displayName" placeholder="e.g. Home Server">
+    <div class="step-panel" id="stepPanelVerify">
+      <div class="step-panel-head">
+        <span>Verification</span>
+        <div class="head-right">
+          <div id="testStatus"></div>
+          <span class="verify-info" id="verifyInfo" tabindex="0" aria-label="Verification details">i<span class="verify-tooltip"><span class="tip-detail" id="statusDetail">Run verification to inspect deployment mode, auth readiness, and sign-in state.</span><span class="tip-meta" id="statusTipMeta"></span></span></span>
+        </div>
+      </div>
+      <div class="step-panel-body">
+        <div class="status-card" id="statusCard" hidden>
+          <div class="status-title" id="statusTitle" hidden>Waiting for verification</div>
+          <div class="status-meta" id="statusMeta" hidden></div>
+        </div>
+        <div class="status-card warning-card" id="httpWarningCard">
+          <div class="warning-header">
+            <div class="status-badge warning"><div class="dot"></div>Insecure HTTP</div>
+            <span class="warning-info" tabindex="0" aria-label="More information">?<span class="warning-tooltip" id="httpWarningDetail">This URL disables TLS. Only continue if you trust the network path to this remote. Connect and save stay disabled until you acknowledge.</span></span>
+          </div>
+          <div class="remember-row">
+            <input type="checkbox" id="allowInsecureHttp">
+            <label for="allowInsecureHttp">I understand the risk and want to allow this HTTP connection</label>
+          </div>
+        </div>
+        <div class="step-placeholder" id="verifyPlaceholder">Run verify to inspect deployment mode, auth readiness, and sign-in state.</div>
+      </div>
     </div>
 
-    <div class="remember-row" style="margin-top:4px;">
-      <input type="checkbox" id="rememberRemoteForm">
-      <label for="rememberRemoteForm">Reconnect to this remote on launch</label>
-    </div>
-
-    <div id="testStatus" style="min-height: 24px;"></div>
-    <div class="status-card" id="statusCard">
-      <div class="status-title" id="statusTitle">Waiting for verification</div>
-      <div class="status-detail" id="statusDetail">Run verification to inspect deployment mode, auth readiness, and sign-in state.</div>
-      <div class="status-meta" id="statusMeta"></div>
+    <div class="step-panel" id="stepPanelSave">
+      <div class="step-panel-head"><span>Save &amp; connect</span></div>
+      <div class="step-panel-body">
+        <div class="form-group">
+          <label for="displayName">Display name <span style="color:#3f3f46">(optional)</span></label>
+          <input type="text" id="displayName" placeholder="e.g. Home Server">
+        </div>
+        <div class="remember-row" style="margin-bottom:0;">
+          <input type="checkbox" id="rememberRemoteForm">
+          <label for="rememberRemoteForm">Reconnect to this remote on launch</label>
+        </div>
+      </div>
     </div>
 
     <div class="form-actions">
-      <button class="btn" onclick="verifyRemote()">Verify Remote</button>
+      <button class="btn" id="verifyBtn" onclick="verifyRemote()">Verify Remote</button>
       <button class="btn primary" id="signinBtn" onclick="continueToSignIn()" disabled>Continue to Sign-In</button>
       <button class="btn" id="saveBtn" onclick="connectAndSave()" disabled>Connect &amp; Save</button>
     </div>
@@ -1001,20 +1128,33 @@ function setInsecureHttpUi(section, required, checked, detailText) {
   requestContentHeightReport();
 }
 
-function syncRemoteActionButtons() {
+function remoteHttpVerificationRequiresAck() {
+  const remoteUrl = (document.getElementById("remoteUrl")?.value || "").trim();
+  return isInsecureHttpUrl(remoteUrl) && !getRemoteInsecureHttpChoice();
+}
+
+function syncRemoteActionButtons(verifying = false) {
+  const verifyBtn = document.getElementById("verifyBtn");
   const signinBtn = document.getElementById("signinBtn");
   const saveBtn = document.getElementById("saveBtn");
-  if (!signinBtn || !saveBtn) {
+  const placeholder = document.getElementById("verifyPlaceholder");
+  if (!verifyBtn || !signinBtn || !saveBtn) {
     return;
   }
 
+  const requiresHttpAck = remoteHttpVerificationRequiresAck();
   const canProceed = !!(
     lastVerification
     && lastVerification.ok
     && (!lastVerification.insecureTransport || getRemoteInsecureHttpChoice())
   );
+  verifyBtn.disabled = verifying || requiresHttpAck;
+  verifyBtn.textContent = verifying ? "Verifying..." : "Verify Remote";
   signinBtn.disabled = !canProceed;
   saveBtn.disabled = !canProceed;
+  if (placeholder) {
+    placeholder.style.display = (lastVerification || verifying || requiresHttpAck) ? "none" : "block";
+  }
 }
 
 function showView(name) {
@@ -1139,6 +1279,7 @@ async function launchLocal() {
 function openAddRemoteFromChooser() {
   launcher.setChooserMode("remote_existing");
   setInsecureHttpUi("remote", isInsecureHttpUrl(document.getElementById("remoteUrl").value), false);
+  resetVerificationUi();
   showView("remote-form");
 }
 
@@ -1148,9 +1289,9 @@ function resetVerificationUi() {
   document.getElementById("urlSuccess").style.display = "none";
   document.getElementById("testStatus").innerHTML = "";
   document.getElementById("statusCard").classList.remove("active");
-  document.getElementById("signinBtn").disabled = true;
-  document.getElementById("saveBtn").disabled = true;
+  document.getElementById("verifyInfo")?.classList.remove("visible");
   setInsecureHttpUi("remote", isInsecureHttpUrl(document.getElementById("remoteUrl").value), getRemoteInsecureHttpChoice());
+  syncRemoteActionButtons();
 }
 
 function renderStatus(result) {
@@ -1169,6 +1310,16 @@ function renderStatus(result) {
   title.textContent = mapped.title;
   detail.textContent = mapped.detail;
   meta.innerHTML = mapped.meta.map((item) => '<span class="pill">' + escapeHtml(item) + "</span>").join("");
+  const tipMeta = document.getElementById("statusTipMeta");
+  if (tipMeta) {
+    tipMeta.innerHTML = mapped.meta.map((item) => {
+      const idx = item.indexOf("=");
+      const k = idx === -1 ? item : item.slice(0, idx);
+      const v = idx === -1 ? "" : item.slice(idx + 1);
+      return '<span class="k">' + escapeHtml(k) + '</span><span class="v">' + escapeHtml(v) + "</span>";
+    }).join("");
+  }
+  document.getElementById("verifyInfo")?.classList.add("visible");
 
   success.style.display = mapped.success ? "block" : "none";
   signinBtn.textContent = mapped.actionLabel;
@@ -1189,10 +1340,15 @@ async function verifyRemote() {
     return;
   }
 
-  const verifyBtn = document.querySelector("#view-remote-form .form-actions .btn:first-child");
-  verifyBtn.disabled = true;
-  verifyBtn.textContent = "Verifying...";
+  if (remoteHttpVerificationRequiresAck()) {
+    document.getElementById("urlError").textContent = "Confirm the insecure HTTP warning before verifying this connection.";
+    document.getElementById("urlError").style.display = "block";
+    return;
+  }
+
+  const verifyBtn = document.getElementById("verifyBtn");
   document.getElementById("testStatus").innerHTML = '<div class="status-badge testing"><div class="dot"></div>Verifying remote...</div>';
+  syncRemoteActionButtons(true);
 
   try {
     const result = await launcher.verifyRemote({ remoteUrl });
@@ -1208,8 +1364,8 @@ async function verifyRemote() {
     setInsecureHttpUi("remote", result.insecureTransport, getRemoteInsecureHttpChoice(), result.warning);
     renderStatus(result);
   } finally {
-    verifyBtn.disabled = false;
     verifyBtn.textContent = "Verify Remote";
+    syncRemoteActionButtons();
   }
 }
 
@@ -1885,7 +2041,9 @@ window.paperclipLauncher.onNavigate((payload) => {
     if (payload.profile) {
       document.getElementById("remoteUrl").value = payload.profile.remoteUrl || "";
       document.getElementById("displayName").value = payload.profile.name || "";
+      setInsecureHttpUi("remote", isInsecureHttpUrl(payload.profile.remoteUrl), !!payload.profile.allowInsecureHttp);
     }
+    resetVerificationUi();
     showView("remote-form");
     return;
   }
