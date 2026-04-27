@@ -1,6 +1,6 @@
 {
   "name": "paperclip-desktop",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Paperclip desktop application — Electron wrapper for the Paperclip server",
   "author": {
@@ -29,12 +29,12 @@
     "dist:linux": "pnpm build && pnpm prepare-server && pnpm build-ui && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "tree-kill": "^1.2.2",
+    "electron-log": "^5.2.0",
     "electron-updater": "^6.3.0",
-    "electron-log": "^5.2.0"
+    "tree-kill": "^1.2.2"
   },
   "devDependencies": {
-    "@paperclipai/server": "2026.416.0",
+    "@paperclipai/server": "2026.427.0",
     "electron": "^41.0.4",
     "electron-builder": "^25.1.8",
     "typescript": "^5.7.3"
