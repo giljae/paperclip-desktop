@@ -229,6 +229,15 @@ Do not submit or publish artifacts you have not tested locally.
 
 ## Step 4: Create A Draft GitHub Release For Staging
 
+Create and push the release tag before attempting the draft release upload:
+
+```bash
+git tag -a v<DESKTOP_VERSION> -m "v<DESKTOP_VERSION>"
+git push origin v<DESKTOP_VERSION>
+```
+
+The mac release upload script creates the draft release with `gh release create --verify-tag`, so the tag must already exist on GitHub.
+
 Prepare the release-asset bundle that uses the public updater-compatible file names:
 
 ```bash
@@ -508,15 +517,16 @@ For the common case, use this order:
 2. `pnpm release:mac:local:x64`
 3. `pnpm release:mac:local:arm64`
 4. test the exact local `.app` bundles
-5. prepare `release/local-macos/release-assets`
-6. create or update a draft release and upload ZIP/DMG assets only
-7. submit ZIPs for notarization asynchronously
-8. monitor until both are `Accepted`
-9. staple the exact local `.app` bundles
-10. repackage notarized ZIP/DMG
-11. prepare the final merged mac updater bundle, optionally with `--staging-percentage <N>`
-12. upload final assets including `latest-mac.yml`
-13. publish the draft release
+5. create and push `v<DESKTOP_VERSION>`
+6. prepare `release/local-macos/release-assets`
+7. create or update a draft release and upload ZIP/DMG assets only
+8. submit ZIPs for notarization asynchronously
+9. monitor until both are `Accepted`
+10. staple the exact local `.app` bundles
+11. repackage notarized ZIP/DMG
+12. prepare the final merged mac updater bundle, optionally with `--staging-percentage <N>`
+13. upload final assets including `latest-mac.yml`
+14. publish the draft release
 
 ## Guardrails
 
